@@ -23,6 +23,11 @@ typedef enum {
     BatchMatMul_Forward, BatchMatMul_Backward, Apply_Grad, Erf_Forward, Erf_Backward
 } CUDAKernelType;
 
+typedef enum{
+    Conv2D, Relu, TransData, MaxPoolWithArgMaxV1, ReduceMean, MatMulV2, Memset, BNTraining_Forward, Conv2DBackpropFilter, 
+    Conv2DBackpropInput, ReluGrad, MaxPoolGradWithArgmaxV1, Fill, Mul, BNTrainingUpdateGrad, BNTrainingReduceGrad, makeLoss, Add
+}AscendKernelType;
+
 const std::string print_kerneltype_array [54] = {
     "Conv2d_Forward", "ReLU_Forward", "MaxPool2d_Forward", "AdaptiveAvgPool2d_Forward", "Linear_Forward", 
     "Dropout_Forward", "BatchNorm2d_Forward", "Conv2d_Backward_Weight", "Conv2d_Backward_Input", "Conv2d_Apply_Grad",
@@ -47,7 +52,8 @@ const std::string print_eviction_array [4] = {
 class CUDAKernel {
     public:
         int kernel_id;
-        CUDAKernelType type;
+        //CUDAKernelType type;
+        AscendKernelType type;
         Model_Layer* parent_layer = nullptr;
         Model_OP* parent_op = nullptr;
         std::unordered_set<Tensor*> inputs;
@@ -62,8 +68,10 @@ class CUDAKernel {
         long pf_execution_cycles = -1;
         long input_pf_execution_cycles = -1;
 
-        CUDAKernel(CUDAKernelType t, Model_Layer* layer);
-        CUDAKernel(CUDAKernelType t, Model_OP* op_layer);
+        //CUDAKernel(CUDAKernelType t, Model_Layer* layer);
+        //CUDAKernel(CUDAKernelType t, Model_OP* op_layer);
+        CUDAKernel(AscendKernelType t, Model_Layer* layer);
+        CUDAKernel(AscendKernelType t, Model_OP* op_layer);
         void getRequiredTensors(std::vector<Tensor*> &required_tensors) const;
         void getRequiredTensors(std::unordered_set<Tensor*> &required_tensors) const;
         void getRequiredTensors(std::vector<Tensor*> &required_tensors,

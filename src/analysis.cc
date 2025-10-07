@@ -1054,6 +1054,273 @@ void CUDAKernel::getTensorBreakdown(std::vector<Tensor*> &inputs,
   }
 }
 
+void layer_second_pass_scheduling_kernels_ascend(){
+    for(size_t i = 0; i < forward_layers.size(); i++)
+    {
+        Model_Layer* current_layer = forward_layers[i];
+
+        if(current_layer->operatorr->type == OperatorType::Conv2d_T)
+        // 数据处理时需要累加5个操作的时间包括数据转换，卷积和加
+        {
+            kernel_list.emplace_back(AscendKernelType::Conv2D, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().inputs.insert(current_layer->weight);
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+        }
+        else if(current_layer->operatorr->type == OperatorType::ReLU_T)
+        {
+            //同样是NCHW，不需要更改，单算子
+            kernel_list.emplace_back(AscendKernelType::Relu, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+        }
+        else if (current_layer->operatorr->type==OperatorType::AdaptiveAvgPool2d_T)
+        {
+            //单算子 NCHW
+            kernel_list.emplace_back(AscendKernelType::ReduceMean, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+        }
+        else if (current_layer->operatorr->type==OperatorType::MaxPool2d_T)
+        {
+            //需要TransData两次改成NC1HWC01
+            kernel_list.emplace_back(AscendKernelType::MaxPoolWithArgMaxV1, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+        }
+        
+        else if (current_layer->operatorr->type==OperatorType::Dropout_T)
+        {
+            //TODO: 暂时没改
+            kernel_list.emplace_back(CUDAKernelType::Dropout_Forward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().inputs.insert(current_layer->musk_array);
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+        }
+        else if (current_layer->operatorr->type==OperatorType::Linear_T)
+        {
+            Linear* op = dynamic_cast<Linear*>(current_layer->operatorr);
+            kernel_list.emplace_back(AscendKernelType::MatMulV2, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().inputs.insert(current_layer->weight);
+            if (op->bias)
+            {
+                kernel_list.back().inputs.insert(current_layer->bias);
+            }
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+            
+        }
+        else if (current_layer->operatorr->type==OperatorType::BatchNorm2d_T)
+        {
+            BatchNorm2d* op = dynamic_cast<BatchNorm2d*>(current_layer->operatorr);
+            //Memset 隐式加入, BN两者也一起隐式加入 
+            kernel_list.emplace_back(AscendKernelType::BNTraining_Forward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().inputs.insert(current_layer->alpha_and_beta);
+            if (op->track_running_stats)
+            {
+                kernel_list.back().inputs.insert(current_layer->running_m);
+                kernel_list.back().inputs.insert(current_layer->running_v);
+                kernel_list.back().outputs.insert(current_layer->running_m);
+                kernel_list.back().outputs.insert(current_layer->running_v);
+            }
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+            kernel_list.back().outputs.insert(current_layer->mu);
+            kernel_list.back().outputs.insert(current_layer->var);
+            kernel_list.back().outputs.insert(current_layer->v1);
+            kernel_list.back().outputs.insert(current_layer->v2);
+        }
+        else if (current_layer->operatorr->type==OperatorType::Add_T)
+        {
+            //TODO: 
+            kernel_list.emplace_back(CUDAKernelType::Add_Forward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            for (int i = 0; i < current_layer->other_inputs.size(); i++)
+            {
+                kernel_list.back().inputs.insert(current_layer->other_inputs[i]);
+            }
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+        }
+        else if (current_layer->operatorr->type==OperatorType::Concat_T)
+        {
+            //TODO: 
+            kernel_list.emplace_back(CUDAKernelType::Concat_Forward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            for (int i = 0; i < current_layer->other_inputs.size(); i++)
+            {
+                kernel_list.back().inputs.insert(current_layer->other_inputs[i]);
+            }
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+        }
+        else if (current_layer->operatorr->type==OperatorType::Scale_T)
+        {
+            //TODO: 
+            kernel_list.emplace_back(CUDAKernelType::Scale_Forward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+        }
+
+    }
+
+     //Make loss 
+     //这一段我认为是从LogSoftmaxV2开始的到LogSoftmaxGrad所有算子
+    kernel_list.emplace_back(AscendKernelType::makeLoss, forward_layers[forward_layers.size()-1]);
+    kernel_list.back().inputs.insert(forward_layers[forward_layers.size()-1]->output_activation);
+    kernel_list.back().outputs.insert(forward_layers[forward_layers.size()-1]->d_output);
+
+    //Backward Propogation
+    for (int i = (int)forward_layers.size() - 1; i >= 0; i--)
+    {
+        Model_Layer* current_layer = forward_layers[i];
+
+        if (current_layer->other_d_outputs.size()!=0)
+        {
+            // 最后的 aclnnAdd_AddAiCore_Add三次卷积反向结束后，还要把 shortcut 分支的梯度 与 主分支 1×1 卷积的输入梯度 相加，这正是 Bottleneck 里
+            // y = f(x) + x
+            // 的反向累加步骤，对应你前面 CUDA 代码里的Add_MultiGredient 语义。
+            // 实际上，这里还要包括一个TensorMove
+            kernel_list.emplace_back(AscendKernelType::Add, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            for (int i = 0; i < current_layer->other_d_outputs.size(); i++)
+            {
+                kernel_list.back().inputs.insert(current_layer->other_d_outputs[i]);
+            }
+            kernel_list.back().outputs.insert(current_layer->d_output);
+        }
+        
+
+        if (current_layer->operatorr->type==OperatorType::Conv2d_T)
+        {
+            //TransData
+            // TransData
+            // Conv2DBackpropInput
+            // TransData
+            // TransData
+            // TransData
+            // MemSet
+            // Conv2DBackpropFilter
+            // TransData
+            // TensorMove
+            kernel_list.emplace_back(AscendKernelType::Conv2DBackpropInput, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().inputs.insert(current_layer->weight);
+            kernel_list.back().outputs.insert(current_layer->d_weight);
+
+            kernel_list.emplace_back(AscendKernelType::Conv2DBackpropFilter, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().outputs.insert(current_layer->d_input);
+
+        }
+        else if (current_layer->operatorr->type==OperatorType::ReLU_T)
+        {
+            //
+            kernel_list.emplace_back(AscendKernelType::ReluGrad, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().outputs.insert(current_layer->d_input);
+        }
+        else if (current_layer->operatorr->type == OperatorType::AdaptiveAvgPool2d_T)
+        {
+            /* 1. Fill: 把 dx 先全部填成 1 / (H*W)  的广播值 */
+            kernel_list.emplace_back(AscendKernelType::Fill, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_output);  // 形状参考
+            kernel_list.back().outputs.insert(current_layer->d_input);  // 待填充的梯度张量
+
+            /* 2. Mul: dx = FillOut ⊗ dy  (element-wise 乘) */
+            kernel_list.emplace_back(AscendKernelType::Mul, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_input);   // 上一步 Fill 结果
+            kernel_list.back().inputs.insert(current_layer->d_output);  // 上游梯度 dy
+            kernel_list.back().outputs.insert(current_layer->d_input);  // 最终回传梯度
+        }
+        else if (current_layer->operatorr->type==OperatorType::MaxPool2d_T)
+        {
+            kernel_list.emplace_back(CUDAKernelType::MaxPool2d_Backward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().outputs.insert(current_layer->d_input);
+        }
+        else if (current_layer->operatorr->type==OperatorType::Dropout_T)
+        {
+            kernel_list.emplace_back(CUDAKernelType::Dropout_Backward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->musk_array);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().outputs.insert(current_layer->d_input);
+
+        }
+        else if (current_layer->operatorr->type==OperatorType::Linear_T)
+        {
+            Linear* op = dynamic_cast<Linear*>(current_layer->operatorr);
+            if (op->bias)
+            {
+                kernel_list.emplace_back(CUDAKernelType::Linear_Backward_Bias, current_layer);
+                kernel_list.back().inputs.insert(current_layer->d_output);
+                kernel_list.back().outputs.insert(current_layer->d_bias);
+
+                kernel_list.emplace_back(CUDAKernelType::Linear_Apply_Grad_Bias, current_layer);
+                kernel_list.back().inputs.insert(current_layer->d_bias);
+                kernel_list.back().inputs.insert(current_layer->bias);
+                kernel_list.back().outputs.insert(current_layer->bias);
+            }
+            
+            kernel_list.emplace_back(CUDAKernelType::Linear_Backward_Weight, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().outputs.insert(current_layer->d_weight);
+
+            kernel_list.emplace_back(CUDAKernelType::Linear_Backward_Input, current_layer);
+            kernel_list.back().inputs.insert(current_layer->weight);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().outputs.insert(current_layer->d_input);
+
+            kernel_list.emplace_back(CUDAKernelType::Linear_Apply_Grad_Weight, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_weight);
+            kernel_list.back().inputs.insert(current_layer->weight);
+            kernel_list.back().outputs.insert(current_layer->weight);
+            
+        }
+        else if (current_layer->operatorr->type==OperatorType::BatchNorm2d_T)
+        {
+            BatchNorm2d* op = dynamic_cast<BatchNorm2d*>(current_layer->operatorr);
+
+            kernel_list.emplace_back(CUDAKernelType::BatchNorm2d_Backward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().inputs.insert(current_layer->v1);
+            kernel_list.back().inputs.insert(current_layer->v2);
+            kernel_list.back().inputs.insert(current_layer->alpha_and_beta);
+            kernel_list.back().outputs.insert(current_layer->d_input);
+            kernel_list.back().outputs.insert(current_layer->d_alpha_and_beta);
+            kernel_list.back().outputs.insert(current_layer->d_mu);
+            kernel_list.back().outputs.insert(current_layer->d_var);
+            kernel_list.back().outputs.insert(current_layer->d_v1);
+            kernel_list.back().outputs.insert(current_layer->d_v2);
+
+            kernel_list.emplace_back(CUDAKernelType::BatchNorm2d_Apply_Grad, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_alpha_and_beta);
+            kernel_list.back().inputs.insert(current_layer->alpha_and_beta);
+            kernel_list.back().outputs.insert(current_layer->alpha_and_beta);
+        }
+        else if (current_layer->operatorr->type==OperatorType::Concat_T)
+        {
+            kernel_list.emplace_back(CUDAKernelType::Concat_Backward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().outputs.insert(current_layer->d_input);
+            for (int j = 0; j < current_layer->other_d_inputs.size(); j++)
+            {
+                kernel_list.back().outputs.insert(current_layer->other_d_inputs[j]);
+            }
+        }
+        else if (current_layer->operatorr->type==OperatorType::Scale_T)
+        {
+            kernel_list.emplace_back(CUDAKernelType::Scale_Backward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().outputs.insert(current_layer->d_input);
+        }
+        
+        
+    }
+}
+
 void layer_second_pass_scheduling_kernels(){
     //Forward propogation
     for (size_t i = 0; i < forward_layers.size(); i++)
