@@ -910,7 +910,7 @@ void layer_first_pass_dataflow(){
 }
 
 
-CUDAKernel::CUDAKernel(CUDAKernelType t, Model_Layer* layer){
+CUDAKernel::CUDAKernel(AscendKernelType t, Model_Layer* layer){
     kernel_id = kernel_index;
     kernel_index++;
     type = t;
@@ -918,7 +918,7 @@ CUDAKernel::CUDAKernel(CUDAKernelType t, Model_Layer* layer){
 }
 
 
-CUDAKernel::CUDAKernel(CUDAKernelType t, Model_OP* op){
+CUDAKernel::CUDAKernel(AscendKernelType t, Model_OP* op){
     kernel_id = kernel_index;
     kernel_index++;
     type = t;
@@ -1083,7 +1083,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         }
         else if (current_layer->operatorr->type==OperatorType::MaxPool2d_T)
         {
-            //需要TransData两次改成NC1HWC01
+            //需要TransData两次改成NC1HWC01 ，后续一次结果TransData
             kernel_list.emplace_back(AscendKernelType::MaxPoolWithArgMaxV1, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().outputs.insert(current_layer->output_activation);
