@@ -2,16 +2,12 @@
 # -*- coding: utf-8 -*-
 import pandas as pd
 
-IN_CSV  = 'profile.csv'
-OUT_CSV = 'folded.csv'
+IN_CSV  = '../data/kernel_details.csv'
+OUT_CSV = '../data/output.csv'
 SEP     = ','                 # 如果是 tab 改成 '\t'
 
 # 需要累加的列
-SUM_COLS = ['Duration(us)', 'aicore_time(us)', 'aic_total_cycles',
-            'aic_mac_time(us)', 'aic_scalar_time(us)', 'aic_mte1_time(us)',
-            'aic_mte2_time(us)', 'aic_fixpipe_time(us)',
-            'aiv_time(us)', 'aiv_total_cycles', 'aiv_vec_time(us)',
-            'aiv_scalar_time(us)', 'aiv_mte2_time(us)', 'aiv_mte3_time(us)']
+SUM_COLS = ['Duration(us)']
 
 # ---------- 工具 ----------
 def replace_rows(df, idx, span, new_rows):
@@ -53,21 +49,70 @@ def fold_bn_forward(df):
 
 def fold_maxpool_forward(df):
     """
-    2 Pre TransData + MaxPoolWithArgmaxV1 + 1 Post TransData
+    1 TransData + MaxPoolWithArgmaxV1 + 1 Post TransData
     """
     idx = 0
-    while idx <= len(df) - 4:
-        t = df.iloc[idx:idx+4]['Type'].tolist()
-        if t == ['TransData','TransData','MaxPoolWithArgmaxV1','TransData']:
-            summed = df.iloc[idx:idx+4][SUM_COLS].sum()
+    while idx <= len(df) - 3:
+        t = df.iloc[idx:idx+3]['Type'].tolist()
+        if t == ['TransData','MaxPoolWithArgmaxV1','TransData']:
+            summed = df.iloc[idx:idx+3][SUM_COLS].sum()
             row = df.iloc[idx].copy()
             row[SUM_COLS] = summed
             row['Name'] = row['Type'] = 'MaxPool_Forward'
-            df = replace_rows(df, idx, 4, [row])
+            df = replace_rows(df, idx, 3, [row])
             idx += 1
             continue
         idx += 1
     return df
+# ---------- makeloss 合并 ----------
+def fold_make_loss(df):
+    """
+    聚合 MakeLoss 区间：
+    从第一个 LogSoftmaxV2 开始，直到 LogSoftmaxGrad 或 NLLLossGrad 结束。
+    期间可包含辅助算子（Fill / OnesLike / Cast / MemSet 等）。
+    """
+    make_loss_ops = [
+        'LogSoftmaxV2', 'OnesLike', 'MemSet', 'NLLLoss',
+        'Fill', 'Cast', 'NLLLossGrad', 'LogSoftmaxGrad'
+    ]
+    start_op = 'LogSoftmaxV2'
+    end_ops = {'LogSoftmaxGrad'}
+
+    idx = 0
+    while idx < len(df):
+        # 检测 MakeLoss 起点
+        if df.iloc[idx]['Type'] == start_op:
+            start = idx
+            end = idx
+
+            # 向后查找，直到找到结束算子
+            while end + 1 < len(df):
+                op_type = df.iloc[end + 1]['Type']
+                end += 1
+                if op_type in end_ops:
+                    # 继续到最后一个结束算子
+                    while end + 1 < len(df) and df.iloc[end + 1]['Type'] in end_ops:
+                        end += 1
+                    break
+                # 如果出现非 make_loss 算子且没到结束点，退出
+                if op_type not in make_loss_ops:
+                    print("出现非 make_loss 算子且没到结束点")
+                    break
+
+            # 聚合区间 [start, end]
+            summed = df.iloc[start:end + 1][SUM_COLS].sum()
+            row = df.iloc[start].copy()
+            row[SUM_COLS] = summed
+            row['Name'] = row['Type'] = 'MakeLoss'
+            df = replace_rows(df, start, end - start + 1, [row])
+
+            idx = start + 1
+            continue
+
+        idx += 1
+
+    return df
+
 
 # ---------- Backward 合并 ----------
 def fold_conv_backward(df):
@@ -160,17 +205,28 @@ def fold_linear_backward(df):
 # ---------- 主流程 ----------
 def main():
     df = pd.read_csv(IN_CSV, sep=SEP).sort_values('Start Time(us)').reset_index(drop=True)
+    # 这里要删去无关列
+    df = df.loc[:,['Type','Duration(us)']]
+    # 这里选取一轮的行
+    mask = df['Type'] == 'ForeachAddList'
+    if mask.any():  # 如果确实存在
+        first_idx = mask.idxmax()  # 第一个 True 的索引
+        df = df.loc[:first_idx - 1]  # 取前面的所有行
+    else:
+        print("⚠️ 未找到 Type == 'ForeachAddList'，保留全部数据。")
 
     df = fold_conv_forward(df)
     df = fold_bn_forward(df)
     df = fold_maxpool_forward(df)
 
+    df = fold_make_loss(df)
+    
     df = fold_conv_backward(df)
     df = fold_bn_backward(df)
     df = fold_maxpool_backward(df)
     df = fold_linear_backward(df)
 
-    df.to_csv(OUT_CSV, sep=SEP, index=False)
+    df.to_csv(OUT_CSV, sep=SEP, index=True)
     print(f'folded csv -> {OUT_CSV}   rows: {len(df)}')
 
 if __name__ == '__main__':
