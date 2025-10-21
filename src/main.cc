@@ -390,59 +390,56 @@ class RedirStdOut {
  * attempt to parse a complete program from the input.
  */
 int main(int argc, char *argv[]) {
-    // check config file argument
+    // Check config file argument
     if (argc == 1) {
         eprintf("Please specify a config file\n", "");
         Assert(false);
     }
 
-    // exit if config file does not exist
+    // Exit if config file does not exist
     std::ifstream config_file(argv[1]);
     if (!config_file.good()) {
         eprintf("Config file <%s> does not exist\n", argv[1]);
         Assert(false);
     }
 
-    // parse config file
+    // Parse config file
     std::string line, command, value;
     printf("\nConfigs:\n");
     while (std::getline(config_file, line)) {
         std::stringstream ss(line);
-        command.clear();
-        value.clear();
+        command.clear(); value.clear();
         ss >> command >> value;
         if (command != "#" && command != "")
             printf("  %25s: <%s>\n", command.c_str(), value.c_str());
 
-        // general settings
-        if (command == "output_folder")                 { output_folder_name = value; }
-        else if (command == "output_override")          { output_override = std::stoi(value) != 0; }
-        else if (command == "is_simulation")            { is_simulation = std::stoi(value) != 0; }
-        else if (command == "is_transformer")           { is_transformer = std::stoi(value); }
-        else if (command == "batch_size")               { batch_size = std::stoi(value); }
-        else if (command == "input_H")                  { input_H = std::stoi(value); }
-        else if (command == "input_W")                  { input_W = std::stoi(value); }
-        else if (command == "num_threads")              { num_threads = std::stoi(value); }
-        else if (command == "borden")                   { borden = std::stoi(value); }
-        else if (command == "#" || command == "")       {}
+        if (command == "output_folder")          { output_folder_name = value; }
+        else if (command == "output_override")   { output_override = std::stoi(value) != 0; }
+        else if (command == "is_simulation")     { is_simulation = std::stoi(value) != 0; }
+        else if (command == "is_transformer")    { is_transformer = std::stoi(value); }
+        else if (command == "batch_size")        { batch_size = std::stoi(value); }
+        else if (command == "input_H")           { input_H = std::stoi(value); }
+        else if (command == "input_W")           { input_W = std::stoi(value); }
+        else if (command == "num_threads")       { num_threads = std::stoi(value); }
+        else if (command == "borden")            { borden = std::stoi(value); }
+        else if (command == "#" || command == "") {}
         else {
             eprintf("Error: Invalid config entry <%s>, aborting...\n", command.c_str());
             Assert(false);
         }
     }
 
-    // sanity check for GPU policies
+    // Sanity check for GPU policies
     Assert((int) Simulator::GPUPageTable::EvcPolicy::DEEPUM != (int) Simulator::MigPolicy::DEEPUM);
 
-    // fix output folder path
+    // Fix output folder path
     if (output_folder_name.back() == '/') output_folder_name.pop_back();
-
     printf("End configs\n\n");
 
-    // random seed
+    // Random seed
     srand(0);
 
-    // check output folder existence
+    // Check output folder existence
     bool output_folder_exists = system(("test -d " + output_folder_name).c_str()) == 0;
     if (output_folder_exists && !output_override) {
         wprintf("Output folder <%s> exists\n", output_folder_name.c_str());
@@ -451,6 +448,7 @@ int main(int argc, char *argv[]) {
     ParseCommandLine(argc, argv);
     SetupOutputFolder();
 
+    // Model parsing and pre-pass
     if (is_transformer == 1) {
         transformer_parse(nn_model_input_file.c_str());
         transformer_op_datalow_pass(borden);
@@ -458,7 +456,6 @@ int main(int argc, char *argv[]) {
         InitScanner();
         InitParser();
         yyparse();
-
         layer_pre_pass_datasize();
         layer_first_pass_dataflow();
         layer_second_pass_scheduling_kernels_ascend();
@@ -466,40 +463,42 @@ int main(int argc, char *argv[]) {
 
     printf("\n");
 
-    // tensor info output for Interval Time calculation
-    RedirStdOut* r = new RedirStdOut("tensors.config");
-    for (size_t i = 0; i < tensor_list.size(); i++) {
-        tensor_list[i]->print();
+    // Output tensor info (for Interval Time calculation)
+    {
+        RedirStdOut r("tensors.config");
+        for (size_t i = 0; i < tensor_list.size(); i++)
+            tensor_list[i]->print();
     }
-    delete r;
 
+    // Output layer info
     if (is_transformer == 1) {
-        r = new RedirStdOut("layers.config");
-        for (size_t i = 0; i < forward_ops.size(); i++) {
-            forward_ops[i]->print();
+        {
+            RedirStdOut r("layers.config");
+            for (size_t i = 0; i < forward_ops.size(); i++)
+                forward_ops[i]->print();
         }
-        delete r;
         transformer_scheduling_kernels();
     } else {
-        r = new RedirStdOut("layers.config");
-        for (size_t i = 0; i < forward_layers.size(); i++) {
-            forward_layers[i]->print();
+        {
+            RedirStdOut r("layers.config");
+            for (size_t i = 0; i < forward_layers.size(); i++)
+                forward_layers[i]->print();
         }
-        delete r;
     }
 
-    // Interval Time calculation
+    // Load kernel times (required for interval calculation)
+    loadKernelTimes();
+
+    // Tensor Interval Time calculation
     tensor_first_pass_liveness_analysis();
     tensor_second_pass_interval_formation();
     get_interval_time();
 
-    // cleanup
-    for (int i = 0; i < forward_layers.size(); i++) {
+    // Cleanup
+    for (int i = 0; i < forward_layers.size(); i++)
         delete forward_layers[i];
-    }
-    for (int i = 0; i < tensor_list.size(); i++) {
+    for (int i = 0; i < tensor_list.size(); i++)
         delete tensor_list[i];
-    }
 
     return (ReportError::NumErrors() == 0 ? 0 : -1);
 }
