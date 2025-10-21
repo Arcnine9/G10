@@ -494,6 +494,24 @@ int main(int argc, char *argv[]) {
     tensor_second_pass_interval_formation();
     get_interval_time();
 
+    // Export Interval Time to txt file
+    {
+        std::string interval_file = output_folder_name + "/interval_time.txt";
+        std::ofstream fout(interval_file);
+        if (!fout.is_open()) {
+            eprintf("Cannot open file <%s> for writing\n", interval_file.c_str());
+            Assert(false);
+        }
+        for (size_t i = 0; i < interval_list.size(); i++) {
+            fout << interval_list[i]->the_tensor->tensor_id << " "
+                 << interval_list[i]->time_estimated << "\n";
+        }
+        fout.close();
+        printf("Interval time exported to %s\n", interval_file.c_str());
+    }
+
+
+
     // Cleanup
     for (int i = 0; i < forward_layers.size(); i++)
         delete forward_layers[i];
