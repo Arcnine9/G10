@@ -910,7 +910,7 @@ void layer_first_pass_dataflow(){
 }
 
 
-CUDAKernel::CUDAKernel(AscendKernelType t, Model_Layer* layer){
+CUDAKernel::CUDAKernel(CUDAKernelType t, Model_Layer* layer){
     kernel_id = kernel_index;
     kernel_index++;
     type = t;
@@ -918,10 +918,25 @@ CUDAKernel::CUDAKernel(AscendKernelType t, Model_Layer* layer){
 }
 
 
-CUDAKernel::CUDAKernel(AscendKernelType t, Model_OP* op){
+CUDAKernel::CUDAKernel(CUDAKernelType t, Model_OP* op){
     kernel_id = kernel_index;
     kernel_index++;
     type = t;
+    parent_op = op;
+}
+
+CUDAKernel::CUDAKernel(AscendKernelType t, Model_Layer* layer){
+    kernel_id = kernel_index;
+    kernel_index++;
+    type_A = t;
+    parent_layer = layer;
+}
+
+
+CUDAKernel::CUDAKernel(AscendKernelType t, Model_OP* op){
+    kernel_id = kernel_index;
+    kernel_index++;
+    type_A = t;
     parent_op = op;
 }
 
@@ -1062,7 +1077,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         if(current_layer->operatorr->type == OperatorType::Conv2d_T)
         // 数据处理时需要累加5个操作的时间包括数据转换，卷积和加
         {
-            kernel_list.emplace_back(AscendKernelType::Conv2D, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Conv2D, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().inputs.insert(current_layer->weight);
             kernel_list.back().outputs.insert(current_layer->output_activation);
@@ -1070,21 +1085,21 @@ void layer_second_pass_scheduling_kernels_ascend(){
         else if(current_layer->operatorr->type == OperatorType::ReLU_T)
         {
             //同样是NCHW，不需要更改，单算子
-            kernel_list.emplace_back(AscendKernelType::Relu, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Relu, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().outputs.insert(current_layer->output_activation);
         }
         else if (current_layer->operatorr->type==OperatorType::AdaptiveAvgPool2d_T)
         {
             //单算子 NCHW
-            kernel_list.emplace_back(AscendKernelType::ReduceMean, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_ReduceMean, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().outputs.insert(current_layer->output_activation);
         }
         else if (current_layer->operatorr->type==OperatorType::MaxPool2d_T)
         {
             //需要TransData两次改成NC1HWC01 ，后续一次结果TransData
-            kernel_list.emplace_back(AscendKernelType::MaxPoolWithArgMaxV1, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_MaxPoolWithArgMaxV1, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().outputs.insert(current_layer->output_activation);
         }
@@ -1100,7 +1115,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         else if (current_layer->operatorr->type==OperatorType::Linear_T)
         {
             Linear* op = dynamic_cast<Linear*>(current_layer->operatorr);
-            kernel_list.emplace_back(AscendKernelType::MatMulV2, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_MatMulV2, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().inputs.insert(current_layer->weight);
             if (op->bias)
@@ -1114,7 +1129,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         {
             BatchNorm2d* op = dynamic_cast<BatchNorm2d*>(current_layer->operatorr);
             //Memset 隐式加入, BN两者也一起隐式加入 
-            kernel_list.emplace_back(AscendKernelType::BNTraining_Forward, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_BNTraining_Forward, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().inputs.insert(current_layer->alpha_and_beta);
             if (op->track_running_stats)
@@ -1164,7 +1179,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
 
      //Make loss 
      //这一段我认为是从LogSoftmaxV2开始的到LogSoftmaxGrad所有算子
-    kernel_list.emplace_back(AscendKernelType::makeLoss, forward_layers[forward_layers.size()-1]);
+    kernel_list.emplace_back(AscendKernelType::A_makeLoss, forward_layers[forward_layers.size()-1]);
     kernel_list.back().inputs.insert(forward_layers[forward_layers.size()-1]->output_activation);
     kernel_list.back().outputs.insert(forward_layers[forward_layers.size()-1]->d_output);
 
@@ -1179,7 +1194,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
             // y = f(x) + x
             // 的反向累加步骤，对应你前面 CUDA 代码里的Add_MultiGredient 语义。
             // 实际上，这里还要包括一个TensorMove
-            kernel_list.emplace_back(AscendKernelType::Add, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Add, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_output);
             for (int i = 0; i < current_layer->other_d_outputs.size(); i++)
             {
@@ -1201,12 +1216,12 @@ void layer_second_pass_scheduling_kernels_ascend(){
             // Conv2DBackpropFilter
             // TransData
             // TensorMove
-            kernel_list.emplace_back(AscendKernelType::Conv2DBackpropInput, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Conv2DBackpropInput, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().inputs.insert(current_layer->weight);
             kernel_list.back().outputs.insert(current_layer->d_weight);
 
-            kernel_list.emplace_back(AscendKernelType::Conv2DBackpropFilter, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Conv2DBackpropFilter, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().outputs.insert(current_layer->d_input);
@@ -1215,7 +1230,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         else if (current_layer->operatorr->type==OperatorType::ReLU_T)
         {
             //
-            kernel_list.emplace_back(AscendKernelType::ReluGrad, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_ReluGrad, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().outputs.insert(current_layer->d_input);
@@ -1223,12 +1238,12 @@ void layer_second_pass_scheduling_kernels_ascend(){
         else if (current_layer->operatorr->type == OperatorType::AdaptiveAvgPool2d_T)
         {
             /* 1. Fill: 把 dx 先全部填成 1 / (H*W)  的广播值 */
-            kernel_list.emplace_back(AscendKernelType::Fill, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Fill, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_output);  // 形状参考
             kernel_list.back().outputs.insert(current_layer->d_input);  // 待填充的梯度张量
 
             /* 2. Mul: dx = FillOut ⊗ dy  (element-wise 乘) */
-            kernel_list.emplace_back(AscendKernelType::Mul, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Mul, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_input);   // 上一步 Fill 结果
             kernel_list.back().inputs.insert(current_layer->d_output);  // 上游梯度 dy
             kernel_list.back().outputs.insert(current_layer->d_input);  // 最终回传梯度
@@ -1236,7 +1251,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         else if (current_layer->operatorr->type==OperatorType::MaxPool2d_T)
         {
             // 2 PreTransData 1 result TransData
-            kernel_list.emplace_back(AscendKernelType::MaxPoolGradWithArgmaxV1, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_MaxPoolGradWithArgmaxV1, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().outputs.insert(current_layer->d_input);
@@ -1256,20 +1271,20 @@ void layer_second_pass_scheduling_kernels_ascend(){
             Linear* op = dynamic_cast<Linear*>(current_layer->operatorr);
 
             /* -------- 1. 权重梯度 dW = d_output^T · x -------- */
-            kernel_list.emplace_back(AscendKernelType::MatMulV2, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_MatMulV2, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().outputs.insert(current_layer->d_weight);
 
             /* -------- 2. 输入梯度 dx = d_output · W^T -------- */
-            kernel_list.emplace_back(AscendKernelType::MatMulV2, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_MatMulV2, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().inputs.insert(current_layer->weight);
             kernel_list.back().outputs.insert(current_layer->d_input);
 
             /* -------- 3. 偏置梯度 db = reduce_sum(d_output, 0) -------- */
             if (op->bias) {
-                kernel_list.emplace_back(AscendKernelType::ReduceSum, current_layer);
+                kernel_list.emplace_back(AscendKernelType::A_ReduceSum, current_layer);
                 kernel_list.back().inputs.insert(current_layer->d_output);
                 kernel_list.back().outputs.insert(current_layer->d_bias);
             }
@@ -1281,7 +1296,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
             BatchNorm2d* op = dynamic_cast<BatchNorm2d*>(current_layer->operatorr);
 
             /* 1. 计算 dγ、dβ 及中间量 ds、db */
-            kernel_list.emplace_back(AscendKernelType::BNTrainingUpdateGrad, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_BNTrainingUpdateGrad, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_output);          // dy
             kernel_list.back().inputs.insert(current_layer->v1);                // μ（batch_mean）
             kernel_list.back().inputs.insert(current_layer->v2);                // σ²（batch_var）
@@ -1292,7 +1307,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
             kernel_list.back().outputs.insert(current_layer->d_v2);             // db（中间量）
 
             /* 2. 计算 dx */
-            kernel_list.emplace_back(AscendKernelType::BNTrainingReduceGrad, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_BNTrainingReduceGrad, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().inputs.insert(current_layer->input_activation);  // x
             kernel_list.back().inputs.insert(current_layer->v1);
