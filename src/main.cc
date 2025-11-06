@@ -408,26 +408,62 @@ int main(int argc, char *argv[]) {
     printf("\nConfigs:\n");
     while (std::getline(config_file, line)) {
         std::stringstream ss(line);
-        command.clear(); value.clear();
+        command.clear(); 
+        value.clear();
         ss >> command >> value;
+
         if (command != "#" && command != "")
             printf("  %25s: <%s>\n", command.c_str(), value.c_str());
 
-        if (command == "output_folder")          { output_folder_name = value; }
-        else if (command == "output_override")   { output_override = std::stoi(value) != 0; }
-        else if (command == "is_simulation")     { is_simulation = std::stoi(value) != 0; }
-        else if (command == "is_transformer")    { is_transformer = std::stoi(value); }
-        else if (command == "batch_size")        { batch_size = std::stoi(value); }
-        else if (command == "input_H")           { input_H = std::stoi(value); }
-        else if (command == "input_W")           { input_W = std::stoi(value); }
-        else if (command == "num_threads")       { num_threads = std::stoi(value); }
-        else if (command == "borden")            { borden = std::stoi(value); }
-        else if (command == "#" || command == "") {}
+        // ===== General settings =====
+        if (command == "output_folder")                 { output_folder_name = value; }
+        else if (command == "output_override")          { output_override = std::stoi(value) != 0; }
+        else if (command == "is_simulation")            { is_simulation = std::stoi(value) != 0; }
+        else if (command == "is_transformer")           { is_transformer = std::stoi(value); }
+        else if (command == "batch_size")               { batch_size = std::stoi(value); }
+        else if (command == "input_H")                  { input_H = std::stoi(value); }
+        else if (command == "input_W")                  { input_W = std::stoi(value); }
+        else if (command == "num_threads")              { num_threads = std::stoi(value); }
+        else if (command == "borden")                   { borden = std::stoi(value); }
+
+        // ===== Model & profiling input files =====
+        else if (command == "nn_model_input_file")      { nn_model_input_file = value; }
+        else if (command == "orig_kernel_time_file")    { orig_kernel_time_file = value; }
+        else if (command == "workspace_size_file")      { workspace_size_file = value; }
+        else if (command == "input_pf_kernel_time_file"){ input_pf_kernel_time_file = value; }
+        else if (command == "pf_kernel_time_file")      { pf_kernel_time_file = value; }
+        else if (command == "stat_output_file")         { stat_output_file = value; }
+
+        // ===== Simulation general =====
+        else if (command == "is_UVM")                   { is_UVM = std::stoi(value) != 0; }
+        else if (command == "use_prefetch")             { use_prefetch = std::stoi(value) != 0; }
+        else if (command == "eviction_policy")          { eviction_policy_str = value; }
+
+        // ===== System parameters =====
+        else if (command == "system_latency_us")        { system_latency_us = std::stod(value); }
+        else if (command == "CPU_PCIe_bandwidth_GBps")  { CPU_PCIe_bandwidth_GBps = std::stod(value); }
+        else if (command == "CPU_memory_line_GB")       { CPU_memory_line_GB = std::stod(value); }
+        else if (command == "GPU_PCIe_bandwidth_GBps")  { GPU_PCIe_bandwidth_GBps = std::stod(value); }
+        else if (command == "GPU_memory_size_GB")       { GPU_memory_size_GB = std::stod(value); }
+        else if (command == "GPU_frequency_GHz")        { GPU_frequency_GHz = std::stod(value); }
+        else if (command == "GPU_malloc_uspB")          { GPU_malloc_uspB = std::stod(value); }
+        else if (command == "GPU_free_uspB")            { GPU_free_uspB = std::stod(value); }
+        else if (command == "SSD_PCIe_bandwidth_GBps")  { SSD_PCIe_bandwidth_GBps = std::stod(value); }
+        else if (command == "SSD_read_latency_us")      { SSD_read_latency_us = std::stod(value); }
+        else if (command == "SSD_write_latency_us")     { SSD_write_latency_us = std::stod(value); }
+        else if (command == "SSD_latency_us")           { SSD_latency_us = std::stod(value); }
+        else if (command == "PCIe_latency_us")          { PCIe_latency_us = std::stod(value); }
+        else if (command == "PCIe_batch_size_page")     { PCIe_batch_size_in_page = std::stoi(value); }
+        else if (command == "delta_parameter")          { delta_parameter = std::stod(value); }
+
+        // ===== Comments or empty =====
+        else if (command == "#" || command == "")       {}
         else {
             eprintf("Error: Invalid config entry <%s>, aborting...\n", command.c_str());
             Assert(false);
         }
     }
+
 
     // Sanity check for GPU policies
     Assert((int) Simulator::GPUPageTable::EvcPolicy::DEEPUM != (int) Simulator::MigPolicy::DEEPUM);
@@ -453,9 +489,12 @@ int main(int argc, char *argv[]) {
         transformer_parse(nn_model_input_file.c_str());
         transformer_op_datalow_pass(borden);
     } else {
+        std::printf("ready to init Scanner\n");
         InitScanner();
         InitParser();
+        printf("ready to yyparse\n");
         yyparse();
+        std::printf("ready to layer analyse\n");
         layer_pre_pass_datasize();
         layer_first_pass_dataflow();
         layer_second_pass_scheduling_kernels_ascend();

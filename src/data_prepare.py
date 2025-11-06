@@ -25,7 +25,7 @@ def fold_conv_forward(df):
             summed = df.iloc[idx:idx+5][SUM_COLS].sum()
             row = df.iloc[idx].copy()
             row[SUM_COLS] = summed
-            row['Name'] = row['Type'] = 'Conv_Forward'
+            # row['Name'] = row['Type'] = 'Conv_Forward'
             df = replace_rows(df, idx, 5, [row])
             idx += 1
             continue
@@ -40,7 +40,7 @@ def fold_bn_forward(df):
             summed = df.iloc[idx:idx+3][SUM_COLS].sum()
             row = df.iloc[idx].copy()
             row[SUM_COLS] = summed
-            row['Name'] = row['Type'] = 'BNTraining_Forward'
+            # row['Name'] = row['Type'] = 'BNTraining_Forward'
             df = replace_rows(df, idx, 3, [row])
             idx += 1
             continue
@@ -58,7 +58,7 @@ def fold_maxpool_forward(df):
             summed = df.iloc[idx:idx+3][SUM_COLS].sum()
             row = df.iloc[idx].copy()
             row[SUM_COLS] = summed
-            row['Name'] = row['Type'] = 'MaxPool_Forward'
+            # row['Name'] = row['Type'] = 'MaxPool_Forward'
             df = replace_rows(df, idx, 3, [row])
             idx += 1
             continue
@@ -103,7 +103,7 @@ def fold_make_loss(df):
             summed = df.iloc[start:end + 1][SUM_COLS].sum()
             row = df.iloc[start].copy()
             row[SUM_COLS] = summed
-            row['Name'] = row['Type'] = 'MakeLoss'
+            # row['Name'] = row['Type'] = 'MakeLoss'
             df = replace_rows(df, start, end - start + 1, [row])
 
             idx = start + 1
@@ -132,8 +132,8 @@ def fold_conv_backward(df):
             row_flt = df.iloc[idx+7].copy()
             row_in[SUM_COLS]  = sum_in
             row_flt[SUM_COLS] = sum_flt
-            row_in['Name']  = row_in['Type']  = 'Conv2DBackpropInput'
-            row_flt['Name'] = row_flt['Type'] = 'Conv2DBackpropFilter'
+            # row_in['Name']  = row_in['Type']  = 'Conv2DBackpropInput'
+            # row_flt['Name'] = row_flt['Type'] = 'Conv2DBackpropFilter'
             df = replace_rows(df, idx, 10, [row_in, row_flt])
             idx += 2
             continue
@@ -148,7 +148,7 @@ def fold_bn_backward(df):
             summed = df.iloc[idx:idx+3][SUM_COLS].sum()
             row = df.iloc[idx].copy()
             row[SUM_COLS] = summed
-            row['Name'] = row['Type'] = 'BNTrainingGrad'
+            # row['Name'] = row['Type'] = 'BNTrainingGrad'
             df = replace_rows(df, idx, 3, [row])
             idx += 1
             continue
@@ -163,7 +163,7 @@ def fold_maxpool_backward(df):
             summed = df.iloc[idx:idx+3][SUM_COLS].sum()
             row = df.iloc[idx].copy()
             row[SUM_COLS] = summed
-            row['Name'] = row['Type'] = 'MaxPoolGradWithArgmaxV1'
+            # row['Name'] = row['Type'] = 'MaxPoolGradWithArgmaxV1'
             df = replace_rows(df, idx, 3, [row])
             idx += 1
             continue
@@ -185,17 +185,17 @@ def fold_linear_backward(df):
             sum_dw = df.iloc[[idx, idx+1]][SUM_COLS].sum()
             row_dw = df.iloc[idx+1].copy()
             row_dw[SUM_COLS] = sum_dw
-            row_dw['Name'] = row_dw['Type'] = 'MatMulV2_dW'
+            # row_dw['Name'] = row_dw['Type'] = 'MatMulV2_dW'
             # 第 2 个 MatMulV2（dx）
             sum_dx = df.iloc[[idx+2, idx+3]][SUM_COLS].sum()
             row_dx = df.iloc[idx+3].copy()
             row_dx[SUM_COLS] = sum_dx
-            row_dx['Name'] = row_dx['Type'] = 'MatMulV2_dx'
+            # row_dx['Name'] = row_dx['Type'] = 'MatMulV2_dx'
             # ReduceSum（db）
             sum_db = df.iloc[[idx+4]][SUM_COLS].sum()
             row_db = df.iloc[idx+4].copy()
             row_db[SUM_COLS] = sum_db
-            row_db['Name'] = row_db['Type'] = 'ReduceSum_db'
+            # row_db['Name'] = row_db['Type'] = 'ReduceSum_db'
             df = replace_rows(df, idx, 5, [row_dw, row_dx, row_db])
             idx += 3
             continue
@@ -225,9 +225,20 @@ def main():
     df = fold_bn_backward(df)
     df = fold_maxpool_backward(df)
     df = fold_linear_backward(df)
+    df = df.loc[:, ['Duration(us)']]
+    df['Duration(ms)'] = df['Duration(us)'] / 1000.0  # 转换为毫秒
 
-    df.to_csv(OUT_CSV, sep=SEP, index=True)
-    print(f'folded csv -> {OUT_CSV}   rows: {len(df)}')
+    # 输出为指定格式
+    lines = [
+        f"{i:04d} {v:.6f} ms"
+        for i, v in enumerate(df['Duration(ms)'])
+    ]
+
+    # 写入文本文件（或直接打印）
+    with open(OUT_CSV.replace('.csv', '.txt'), 'w') as f:
+        f.write('\n'.join(lines))
+
+    print(f'folded txt -> {OUT_CSV.replace(".csv", ".txt")}   rows: {len(df)}')
 
 if __name__ == '__main__':
     main()
