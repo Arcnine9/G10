@@ -489,6 +489,20 @@ int main(int argc, char *argv[]) {
         transformer_parse(nn_model_input_file.c_str());
         transformer_op_datalow_pass(borden);
     } else {
+        if (isatty(fileno(stdin))) {  // 如果当前输入不是管道输入
+            if (nn_model_input_file.empty()) {
+                eprintf("No input NN model in either stdin or config file\n", "");
+                Assert(false);
+            } else {
+                std::ifstream nn_model(nn_model_input_file.c_str());
+                if (!nn_model.good()) {
+                    eprintf("Invalid input NN model specified in config file <%s>\n",
+                            nn_model_input_file.c_str());
+                    Assert(false);
+                }
+                freopen(nn_model_input_file.c_str(), "r", stdin);  // ⬅ 关键点：重定向
+            }
+        }
         std::printf("ready to init Scanner\n");
         InitScanner();
         InitParser();
