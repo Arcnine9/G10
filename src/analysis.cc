@@ -1157,7 +1157,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         else if (current_layer->operatorr->type==OperatorType::Add_T)
         {
             //TODO: 
-            kernel_list.emplace_back(CUDAKernelType::Add_Forward, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Add, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             for (int i = 0; i < current_layer->other_inputs.size(); i++)
             {
