@@ -103,7 +103,7 @@ def fold_make_loss(df):
             summed = df.iloc[start:end + 1][SUM_COLS].sum()
             row = df.iloc[start].copy()
             row[SUM_COLS] = summed
-            # row['Name'] = row['Type'] = 'MakeLoss'
+            row['Name'] = row['Type'] = 'MakeLoss'
             df = replace_rows(df, start, end - start + 1, [row])
 
             idx = start + 1
@@ -117,24 +117,38 @@ def fold_make_loss(df):
 # ---------- Backward 合并 ----------
 def fold_conv_backward(df):
     idx = 0
-    while idx <= len(df) - 10:
-        t = df.iloc[idx:idx+10]['Type'].tolist()
+    while idx <= len(df) - 9:  # 最少需要9行
+        t = df.iloc[idx:idx+9]['Type'].tolist()
+        
+        # 检查基础9行模式
         if (t[:2] == ['TransData','TransData'] and
             t[2] == 'Conv2DBackpropInput' and
             t[3:6] == ['TransData','TransData','TransData'] and
             t[6] == 'MemSet' and
             t[7] == 'Conv2DBackpropFilter' and
-            t[8] == 'TransData' and
-            t[9] == 'TensorMove'):
-            sum_in  = df.iloc[idx:idx+5][SUM_COLS].sum()
-            sum_flt = df.iloc[idx+5:idx+10][SUM_COLS].sum()
+            t[8] == 'TransData'):
+            
+            # 检查是否存在第10行的TensorMove
+            if idx + 10 <= len(df) and df.iloc[idx+9]['Type'] == 'TensorMove':
+                span = 10
+                # 包含TensorMove：汇总5-9行(MemSet + Conv2DBackpropFilter + TransData + TensorMove)
+                sum_flt = df.iloc[idx+5:idx+10][SUM_COLS].sum()
+            else:
+                span = 9
+                # 不包含TensorMove：汇总5-8行(MemSet + Conv2DBackpropFilter + TransData)
+                sum_flt = df.iloc[idx+5:idx+9][SUM_COLS].sum()
+            
+            # 汇总输入梯度部分：0-4行(TransData + TransData + Conv2DBackpropInput + TransData + TransData)
+            sum_in = df.iloc[idx:idx+5][SUM_COLS].sum()
+            
             row_in  = df.iloc[idx].copy()
             row_flt = df.iloc[idx+7].copy()
             row_in[SUM_COLS]  = sum_in
             row_flt[SUM_COLS] = sum_flt
             row_in['Name']  = row_in['Type']  = 'Conv2DBackpropInput'
             row_flt['Name'] = row_flt['Type'] = 'Conv2DBackpropFilter'
-            df = replace_rows(df, idx, 10, [row_in, row_flt])
+            
+            df = replace_rows(df, idx, span, [row_in, row_flt])
             idx += 2
             continue
         idx += 1
@@ -167,13 +181,13 @@ def fold_bn_backward(df):
 def fold_maxpool_backward(df):
     idx = 0
     while idx <= len(df) - 3:
-        t = df.iloc[idx:idx+3]['Type'].tolist()
-        if t == ['TransData','TransData','MaxPoolGradWithArgmaxV1']:
-            summed = df.iloc[idx:idx+3][SUM_COLS].sum()
+        t = df.iloc[idx:idx+4]['Type'].tolist()
+        if t == ['TransData','TransData','MaxPoolGradWithArgmaxV1','TransData']:
+            summed = df.iloc[idx:idx+4][SUM_COLS].sum()
             row = df.iloc[idx].copy()
             row[SUM_COLS] = summed
             row['Name'] = row['Type'] = 'MaxPoolGradWithArgmaxV1'
-            df = replace_rows(df, idx, 3, [row])
+            df = replace_rows(df, idx, 4, [row])
             idx += 1
             continue
         idx += 1
@@ -211,6 +225,38 @@ def fold_linear_backward(df):
         idx += 1
     return df
 
+def fold_conv_backward_first_layer(df):
+    """
+    单独处理 ResNet 第一层反向传播末尾 5 行：
+    [TransData, TransData, MemSet, Conv2DBackpropFilter, TransData]
+    在 idx 处插入一行时间为 0 的 Conv2DBackpropInput，
+    然后将原来的 MemSet/Conv2DBackpropFilter/TransData 合并成新的 Conv2DBackpropFilter。
+    最终变成：
+    [Conv2DBackpropInput(0), Conv2DBackpropFilter(合并后)]
+    """
+    n = len(df)
+    if n < 5:
+        return df
+
+    idx = n - 5
+    t = df.iloc[idx:idx+5]['Type'].tolist()
+    if t == ['TransData', 'TransData', 'MemSet', 'Conv2DBackpropFilter', 'TransData']:
+        # 1. 构造时间为 0 的 Conv2DBackpropInput
+        inp_row = df.iloc[idx].copy()
+        inp_row[SUM_COLS] = 0
+        inp_row['Name'] = inp_row['Type'] = 'Conv2DBackpropInput'
+
+        # 2. 合并后 3 行：MemSet + Conv2DBackpropFilter + TransData
+        flt_summed = df.iloc[idx+2:idx+5][SUM_COLS].sum()
+        flt_row = df.iloc[idx+2].copy()
+        flt_row[SUM_COLS] = flt_summed
+        flt_row['Name'] = flt_row['Type'] = 'Conv2DBackpropFilter'
+
+        # 3. 替换：删掉 5 行，插入 2 行
+        df = replace_rows(df, idx, 5, [inp_row, flt_row])
+    return df
+
+
 # ---------- 主流程 ----------
 def main():
     df = pd.read_csv(IN_CSV, sep=SEP).sort_values('Start Time(us)').reset_index(drop=True)
@@ -234,6 +280,7 @@ def main():
     df = fold_bn_backward(df)
     df = fold_maxpool_backward(df)
     df = fold_linear_backward(df)
+    df = fold_conv_backward_first_layer(df)
 
 
     # df = df.loc[:, ['Duration(us)']]
