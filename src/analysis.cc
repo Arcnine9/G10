@@ -951,7 +951,7 @@ CUDAKernel::CUDAKernel(AscendKernelType t, Model_OP* op){
 
 
 void CUDAKernel::print(){
-    std::cout<<"Kernel ID: "<<kernel_id<<", "<< "Name: "<<print_kerneltype_array[type]<<std::endl;
+    std::cout<<"Kernel ID: "<<kernel_id<<", "<< "Name: "<<print_ascendkerneltype_array[type_A]<<std::endl;
     if (this->parent_layer)
     {
         std::cout<<"Parent Layer ID:"<<parent_layer->layer_id<<"; Name:";
@@ -1008,7 +1008,7 @@ void CUDAKernel::print(){
     }
     
     
-    std::cout<<"Execution Time: "<< execution_cycles<<std::endl;
+    // std::cout<<"Execution Time: "<< execution_cycles<<std::endl;
     if (this->parent_layer)
     {
         std::cout<<"("<<parent_layer->N<<","<<parent_layer->C<<","<<parent_layer->H<<","<<parent_layer->W<<")"<<std::endl;

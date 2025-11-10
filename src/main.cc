@@ -556,7 +556,13 @@ int main(int argc, char *argv[]) {
                 forward_layers[i]->print();
         }
     }
-
+    //Output kernel info
+    {
+        RedirStdOut r("kernels.config");
+        for (size_t i = 0; i < kernel_list.size(); i++)
+            kernel_list[i].print();
+    }
+    
     // Load kernel times (required for interval calculation)
     loadKernelTimes();
 
