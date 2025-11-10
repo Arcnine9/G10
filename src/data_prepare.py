@@ -243,7 +243,7 @@ def fold_conv_backward_first_layer(df):
     if t == ['TransData', 'TransData', 'MemSet', 'Conv2DBackpropFilter', 'TransData']:
         # 1. 构造时间为 0 的 Conv2DBackpropInput
         inp_row = df.iloc[idx].copy()
-        inp_row[SUM_COLS] = 0
+        inp_row[SUM_COLS] = 0.000001  # 设置为极小值，避免完全为 0
         inp_row['Name'] = inp_row['Type'] = 'Conv2DBackpropInput'
 
         # 2. 合并后 3 行：MemSet + Conv2DBackpropFilter + TransData
