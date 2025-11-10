@@ -73,6 +73,12 @@ void Model_Layer::give_next_layer_size(int* N, int* C, int* H, int* W){
     if (this->operatorr->type==OperatorType::Conv2d_T)
     {
         Conv2d* op = dynamic_cast<Conv2d*>(this->operatorr);
+        if (this->C != op->in_channels) {
+            std::cerr << "[Debug] Layer Mismatch at Conv2d_T:\n";
+            std::cerr << "  this->C = " << this->C << "\n";
+            std::cerr << "  op->in_channels = " << op->in_channels << "\n";
+            std::cerr << "  previous layer type = " << this->previous_layers[0]->operatorr->type << "\n";
+        }
         Assert(this->C==op->in_channels);
         *C = op->out_channels;
         *H = ((this->H - op->kernel_size_r + 2 * op->padding_0)/op->stride_0) +1;
@@ -164,6 +170,8 @@ void layer_pre_pass_datasize(){
         else
         {
             int numbers[4];
+            //std::printf("Layer %d:", i);
+            //current_layer->print_name();
             current_layer->previous_layers[0]->give_next_layer_size(numbers, numbers+1, numbers+2, numbers+3); 
             current_layer->N = numbers[0];
             current_layer->C = numbers[1];
@@ -610,6 +618,7 @@ void layer_first_pass_dataflow(){
         {
             Conv2d* op = dynamic_cast<Conv2d*>(current_layer->operatorr);
             int NN, K, P, Q;
+            //std::printf("Layer %d: Conv2d \n", i);
             current_layer->give_next_layer_size(&NN, &K, &P, &Q);
             int R = op->kernel_size_r;
             int S = op->kernel_size_s;

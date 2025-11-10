@@ -425,6 +425,9 @@ int main(int argc, char *argv[]) {
         else if (command == "input_W")                  { input_W = std::stoi(value); }
         else if (command == "num_threads")              { num_threads = std::stoi(value); }
         else if (command == "borden")                   { borden = std::stoi(value); }
+        else if (command == "is_resnet")            { is_resnet = std::stoi(value); }
+        else if (command == "is_inception")             { is_inception = std::stoi(value); }
+
 
         // ===== Model & profiling input files =====
         else if (command == "nn_model_input_file")      { nn_model_input_file = value; }
@@ -508,8 +511,23 @@ int main(int argc, char *argv[]) {
         InitParser();
         printf("ready to yyparse\n");
         yyparse();
+
+        // std::ofstream log_file("layer_list.txt");
+        // std::streambuf* cout_buf = std::cout.rdbuf(); // 保存原缓冲区
+        // std::cout.rdbuf(log_file.rdbuf());            // 重定向到文件
+
+        // // 打印层信息（所有 print_name 输出会进入 layer_list.txt）
+        // for (int i = 0; i < forward_layers.size(); i++) {
+        //     forward_layers[i]->print_name();
+        // }
+
+        // // 恢复 std::cout
+        // std::cout.rdbuf(cout_buf);
+        // log_file.close();
+
         std::printf("ready to layer analyse\n");
         layer_pre_pass_datasize();
+        std::printf("layer pre done\n");
         layer_first_pass_dataflow();
         layer_second_pass_scheduling_kernels_ascend();
     }
