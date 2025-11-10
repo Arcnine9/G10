@@ -208,17 +208,17 @@ def fold_linear_backward(df):
             sum_dw = df.iloc[[idx, idx+1]][SUM_COLS].sum()
             row_dw = df.iloc[idx+1].copy()
             row_dw[SUM_COLS] = sum_dw
-            row_dw['Name'] = row_dw['Type'] = 'MatMulV2_dW'
+            row_dw['Name'] = row_dw['Type'] = 'MatMulV2'
             # 第 2 个 MatMulV2（dx）
             sum_dx = df.iloc[[idx+2, idx+3]][SUM_COLS].sum()
             row_dx = df.iloc[idx+3].copy()
             row_dx[SUM_COLS] = sum_dx
-            row_dx['Name'] = row_dx['Type'] = 'MatMulV2_dx'
+            row_dx['Name'] = row_dx['Type'] = 'MatMulV2'
             # ReduceSum（db）
             sum_db = df.iloc[[idx+4]][SUM_COLS].sum()
             row_db = df.iloc[idx+4].copy()
             row_db[SUM_COLS] = sum_db
-            row_db['Name'] = row_db['Type'] = 'ReduceSum_db'
+            row_db['Name'] = row_db['Type'] = 'ReduceSum'
             df = replace_rows(df, idx, 5, [row_dw, row_dx, row_db])
             idx += 3
             continue
