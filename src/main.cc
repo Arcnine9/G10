@@ -572,19 +572,42 @@ int main(int argc, char *argv[]) {
     get_interval_time();
 
     // Export Interval Time to txt file
+    // ==========  新增：完整的张量生命周期信息导出  ==========
     {
-        std::string interval_file = output_folder_name + "/interval_time.txt";
-        std::ofstream fout(interval_file);
+        std::string lifecycle_file = output_folder_name + "/tensor_lifecycle.txt";
+        std::ofstream fout(lifecycle_file);
         if (!fout.is_open()) {
-            eprintf("Cannot open file <%s> for writing\n", interval_file.c_str());
+            eprintf("Cannot open file <%s> for writing\n", lifecycle_file.c_str());
             Assert(false);
         }
-        for (size_t i = 0; i < interval_list.size(); i++) {
-            fout << interval_list[i]->the_tensor->tensor_id << " "
-                 << interval_list[i]->time_estimated << "\n";
+
+        /* 标题行，方便后续 python 画图 */
+        fout << "#tensor_id  size_B  birth_kid  death_kid  "
+                "hidden_interval_num  (start_kid,end_kid,duration_us) ...\n";
+
+        for (Tensor* t : tensor_list) {
+            if (t->is_global_weight)   // 全局权重不统计
+                continue;
+
+            /* 1. 基本生命段 */
+            fout << t->tensor_id               << " "
+                 << t->size_in_byte            << " "   // ← 改成现有字段
+                 << t->live_interval[0]        << " "
+                 << t->live_interval[1]        << " ";
+
+            /* 2. 未激活段（hiding_interval） */
+            fout << t->hidding_intervals.size();
+            for (const Hidding_Interval* h : t->hidding_intervals) {
+                // 转成微秒
+                double dur_us = h->time_estimated;
+                fout << " (" << h->kernelLevel_interval[0]
+                     << ","  << h->kernelLevel_interval[1]
+                     << ","  << dur_us << ")";
+            }
+            fout << "\n";
         }
         fout.close();
-        printf("Interval time exported to %s\n", interval_file.c_str());
+        printf("Tensor lifecycle exported to %s\n", lifecycle_file.c_str());
     }
 
 
