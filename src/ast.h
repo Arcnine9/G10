@@ -41,7 +41,7 @@
 
 
 typedef enum {
-  Conv2d_T, ReLU_T, MaxPool2d_T, AdaptiveAvgPool2d_T, Linear_T, Dropout_T, BatchNorm2d_T, Init_T, Add_T, Concat_T, Scale_T
+  Conv2d_T, ReLU_T, MaxPool2d_T, AdaptiveAvgPool2d_T, Linear_T, Dropout_T, BatchNorm2d_T, Init_T, Add_T, Concat_T, Scale_T, AvgPool2d_T
 } OperatorType;
 
 
@@ -269,6 +269,20 @@ class AdaptiveAvgPool2d : public Operatorr
     AdaptiveAvgPool2d(yyltype loc, int ox, int oy);
 
     const char *GetPrintNameForNode()   { return "AdaptiveAvgPool2d"; }
+    void PrintChildren(int indentLevel);
+};
+
+class AvgPool2d : public Operatorr
+{
+  public:
+    int kernel_size;
+    int stride;
+    int padding;
+    int dilation;
+    bool ceil_mode;
+    AvgPool2d(yyltype loc, int k, int s, int p, int d, bool ceil_mode);
+    
+    const char *GetPrintNameForNode()   { return "AvgPool2d"; }
     void PrintChildren(int indentLevel);
 };
 

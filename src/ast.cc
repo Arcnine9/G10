@@ -110,6 +110,19 @@ void MaxPool2d::PrintChildren(int indentLevel){
     printf("(%d, %d, %d, %d, %d)", kernel_size, stride, padding, dilation, ceil_mode);
 }
 
+AvgPool2d::AvgPool2d(yyltype loc, int k, int s, int p, int d, bool ceil_mode) : Operatorr(loc){
+    type = OperatorType::AvgPool2d_T;
+    this->kernel_size = k;
+    this->stride =s;
+    this->padding = p;
+    this->dilation = d;
+    this->ceil_mode = ceil_mode;
+}
+
+void AvgPool2d::PrintChildren(int indentLevel){
+    printf("(%d, %d, %d, %d, %d)", kernel_size, stride, padding, dilation, ceil_mode);
+}
+
 
 AdaptiveAvgPool2d::AdaptiveAvgPool2d(yyltype loc, int ox, int oy) : Operatorr(loc){
     type = OperatorType::AdaptiveAvgPool2d_T;
@@ -333,9 +346,9 @@ void UserBlock::Analysis(){
             yyltype random;
             int n = forward_layers.size();
 
-            Operatorr* maxpl = new MaxPool2d(random, 3, 1, 1, 1, false);
-            Model_Layer* maxpl_layer = new Model_Layer(maxpl, layer_id-3);
-            forward_layers.insert(forward_layers.begin()+n-3, maxpl_layer);
+            Operatorr* avgpl = new AvgPool2d(random, 3, 1, 1, 1, false);
+            Model_Layer* avgpl_layer = new Model_Layer(avgpl, layer_id-3);
+            forward_layers.insert(forward_layers.begin()+n-3, avgpl_layer);
             layer_id++;
             forward_layers[n-2]->layer_id = n-2;
             forward_layers[n-1]->layer_id = n-1;
@@ -414,9 +427,9 @@ void UserBlock::Analysis(){
             yyltype random;
             int n = forward_layers.size();
 
-            Operatorr* maxpl = new MaxPool2d(random, 3, 1, 1, 1, false);
-            Model_Layer* maxpl_layer = new Model_Layer(maxpl, layer_id-3);
-            forward_layers.insert(forward_layers.begin()+n-3, maxpl_layer);
+            Operatorr* avgpl = new AvgPool2d(random, 3, 1, 1, 1, false);
+            Model_Layer* avgpl_layer = new Model_Layer(avgpl, layer_id-3);
+            forward_layers.insert(forward_layers.begin()+n-3, avgpl_layer);
             layer_id++;
             forward_layers[n-2]->layer_id = n-2;
             forward_layers[n-1]->layer_id = n-1;
@@ -510,9 +523,9 @@ void UserBlock::Analysis(){
 
             n++;
 
-            Operatorr* maxpl = new MaxPool2d(random, 3, 1, 1, 1, false);
-            Model_Layer* maxpl_layer = new Model_Layer(maxpl, layer_id-3);
-            forward_layers.insert(forward_layers.begin()+n-3, maxpl_layer);
+            Operatorr* avgpl = new AvgPool2d(random, 3, 1, 1, 1, false);
+            Model_Layer* avgpl_layer = new Model_Layer(avgpl, layer_id-3);
+            forward_layers.insert(forward_layers.begin()+n-3, avgpl_layer);
             layer_id++;
             forward_layers[n-2]->layer_id = n-2;
             forward_layers[n-1]->layer_id = n-1;
