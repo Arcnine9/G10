@@ -1179,7 +1179,13 @@ void layer_second_pass_scheduling_kernels_ascend(){
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().outputs.insert(current_layer->output_activation);
         }
-
+        else if (current_layer->operatorr->type==OperatorType::AvgPool2d_T)
+        {
+            //TransData Pooling TransData
+            kernel_list.emplace_back(AscendKernelType::A_Avgpool, current_layer);
+            kernel_list.back().inputs.insert(current_layer->input_activation);
+            kernel_list.back().outputs.insert(current_layer->output_activation);
+        }
     }
 
      //Make loss 
@@ -1338,7 +1344,12 @@ void layer_second_pass_scheduling_kernels_ascend(){
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().outputs.insert(current_layer->d_input);
         }
-        
+        else if (current_layer->operatorr->type==OperatorType::AvgPool2d_T)
+        {
+            kernel_list.emplace_back(AscendKernelType::A_Avgpool_Backward, current_layer);
+            kernel_list.back().inputs.insert(current_layer->d_output);
+            kernel_list.back().outputs.insert(current_layer->d_input);
+        }
         
     }
 }
