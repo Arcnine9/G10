@@ -58,7 +58,7 @@ const std::string print_ascendkerneltype_array[19] = {
     "A_BNTrainingReduceGrad",
     "A_makeLoss",
     "A_Add",
-    "A_ReduceSum"
+    "A_ReduceSum",
 };
 
 
