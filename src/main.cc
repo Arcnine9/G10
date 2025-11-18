@@ -562,7 +562,7 @@ int main(int argc, char *argv[]) {
         for (size_t i = 0; i < kernel_list.size(); i++)
             std::cout<<"Kernel ID: "<<kernel_list[i].kernel_id<<", "<< "Name: "<<print_ascendkerneltype_array[kernel_list[i].type_A]<<std::endl;
     }
-    
+    std::printf("Layer and Kernel info output done\n\n");
     // Load kernel times (required for interval calculation)
     loadKernelTimes();
 

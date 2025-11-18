@@ -64,6 +64,45 @@ def fold_maxpool_forward(df):
             continue
         idx += 1
     return df
+
+def fold_avgpool_forward(df):
+    """
+    处理 Forward 流程中的 AvgPool:
+    匹配模式 ['TransData','A_Avgpool','TransData'] 并合并成一条
+    """
+    idx = 0
+    while idx <= len(df) - 3:
+        t = df.iloc[idx:idx+3]['Type'].tolist()
+        if t == ['TransData','A_Avgpool','TransData']:
+            summed = df.iloc[idx:idx+3]['Duration(us)'].sum()
+            row = df.iloc[idx].copy()
+            row['Duration(us)'] = summed
+            row['Name'] = row['Type'] = 'AvgPool_Forward'
+            df = replace_rows(df, idx, 3, [row])
+            idx += 1
+            continue
+        idx += 1
+    return df
+
+def fold_dropout_forward(df):
+    """
+    处理 Forward 流程中的 Dropout:
+    匹配模式 ['DSAGenBitMask','DropOutDoMask'] 并合并成一条
+    """
+    idx = 0
+    while idx <= len(df) - 2:
+        t = df.iloc[idx:idx+2]['Type'].tolist()
+        if t == ['DSAGenBitMask','DropOutDoMask']:
+            summed = df.iloc[idx:idx+2]['Duration(us)'].sum()
+            row = df.iloc[idx].copy()
+            row['Duration(us)'] = summed
+            row['Name'] = row['Type'] = 'Dropout_Forward'
+            df = replace_rows(df, idx, 2, [row])
+            idx += 1
+            continue
+        idx += 1
+    return df
+
 # ---------- makeloss 合并 ----------
 def fold_make_loss(df):
     """
@@ -256,6 +295,43 @@ def fold_conv_backward_first_layer(df):
         df = replace_rows(df, idx, 5, [inp_row, flt_row])
     return df
 
+def fold_avgpool_backward(df):
+    """
+    处理 Backward 流程中的 AvgPool:
+    匹配模式 ['TransData','TransData','TransData','Memset','TransData','Conv2DBackpropInput','TransData'] 并合并成一条
+    """
+    idx = 0
+    while idx <= len(df) - 7:
+        t = df.iloc[idx:idx+7]['Type'].tolist()
+        if t == ['TransData','TransData','TransData','MemSet','TransData','Conv2DBackpropInput','TransData']:
+            summed = df.iloc[idx:idx+7][SUM_COLS].sum()
+            row = df.iloc[idx].copy()
+            row[SUM_COLS] = summed
+            row['Name'] = row['Type'] = 'AvgPool2d_Backward'
+            df = replace_rows(df, idx, 7, [row])
+            idx += 1
+            continue
+        idx += 1
+    return df
+
+def fold_slice_backward(df):
+    """
+    处理 Backward 流程中的 Slice:
+    匹配模式 ['Slice','ReluGrad'] 并合并成一条
+    """
+    idx = 0
+    while idx <= len(df) - 2:
+        t = df.iloc[idx:idx+2]['Type'].tolist()
+        if t == ['Slice','ReluGrad']:
+            summed = df.iloc[idx:idx+2][SUM_COLS].sum()
+            row = df.iloc[idx].copy()
+            row[SUM_COLS] = summed
+            row['Name'] = row['Type'] = 'ReluGrad'
+            df = replace_rows(df, idx, 2, [row])
+            idx += 1
+            continue
+        idx += 1
+    return df
 
 # ---------- 主流程 ----------
 def main():
@@ -273,6 +349,8 @@ def main():
     df = fold_conv_forward(df)
     df = fold_bn_forward(df)
     df = fold_maxpool_forward(df)
+    df = fold_avgpool_forward(df)
+    df = fold_dropout_forward(df)
 
     df = fold_make_loss(df)
     
@@ -280,6 +358,8 @@ def main():
     df = fold_bn_backward(df)
     df = fold_maxpool_backward(df)
     df = fold_linear_backward(df)
+    df = fold_avgpool_backward(df)
+    df = fold_slice_backward(df)
     df = fold_conv_backward_first_layer(df)
 
 

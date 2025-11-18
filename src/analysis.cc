@@ -97,6 +97,13 @@ void Model_Layer::give_next_layer_size(int* N, int* C, int* H, int* W){
         *H = ((this->H - op->kernel_size + 2 * op->padding)/op->stride) +1;
         *W = ((this->W - op->kernel_size + 2 * op->padding)/op->stride) +1;
     }
+    else if(this->operatorr->type==OperatorType::AvgPool2d_T)
+    {
+        AvgPool2d* op = dynamic_cast<AvgPool2d*>(this->operatorr);
+        *C = this->C;
+        *H = ((this->H - op->kernel_size + 2 * op->padding)/op->stride) +1;
+        *W = ((this->W - op->kernel_size + 2 * op->padding)/op->stride) +1;
+    }
     else if (this->operatorr->type==OperatorType::AdaptiveAvgPool2d_T)
     {
         AdaptiveAvgPool2d* op = dynamic_cast<AdaptiveAvgPool2d*>(this->operatorr);
@@ -260,6 +267,10 @@ void Model_Layer::print_name(){
 
     case OperatorType::Scale_T :
         std::cout<<"Scale";
+        break;
+
+    case OperatorType::AvgPool2d_T :
+        std::cout<<"AvgPool2d";
         break;
 
     default:
@@ -661,7 +672,7 @@ void layer_first_pass_dataflow(){
             current_layer->d_input = new Tensor((long long) N*C*H*W*4);
             tensor_list.push_back(current_layer->d_input);
         }
-        else if (current_layer->operatorr->type==OperatorType::AdaptiveAvgPool2d_T || current_layer->operatorr->type==OperatorType::MaxPool2d_T)
+        else if (current_layer->operatorr->type==OperatorType::AdaptiveAvgPool2d_T || current_layer->operatorr->type==OperatorType::MaxPool2d_T || current_layer->operatorr->type==OperatorType::AvgPool2d_T)
         {
             int NN, K, P, Q;
             current_layer->give_next_layer_size(&NN, &K, &P, &Q);
@@ -996,7 +1007,9 @@ void CUDAKernel::print(){
             case OperatorType::Scale_T :
                 std::cout<<"Scale";
                 break;
-
+            case OperatorType::AvgPool2d_T :
+                std::cout<<"AvgPool2d";
+                break;
             default:
                 break;
         }
