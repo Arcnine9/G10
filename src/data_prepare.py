@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 import pandas as pd
 
-IN_CSV  = '../data/kernel_details.csv'
-OUT_CSV = '../data/output.csv'
+IN_CSV  = '../data/Inception/kernel_details.csv'
+OUT_CSV = '../data/Inception/output.csv'
 SEP     = ','                 # 如果是 tab 改成 '\t'
 
 # 需要累加的列
@@ -73,7 +73,7 @@ def fold_avgpool_forward(df):
     idx = 0
     while idx <= len(df) - 3:
         t = df.iloc[idx:idx+3]['Type'].tolist()
-        if t == ['TransData','A_Avgpool','TransData']:
+        if t == ['TransData','Pooling','TransData']:
             summed = df.iloc[idx:idx+3]['Duration(us)'].sum()
             row = df.iloc[idx].copy()
             row['Duration(us)'] = summed
@@ -314,24 +314,7 @@ def fold_avgpool_backward(df):
         idx += 1
     return df
 
-def fold_slice_backward(df):
-    """
-    处理 Backward 流程中的 Slice:
-    匹配模式 ['Slice','ReluGrad'] 并合并成一条
-    """
-    idx = 0
-    while idx <= len(df) - 2:
-        t = df.iloc[idx:idx+2]['Type'].tolist()
-        if t == ['Slice','ReluGrad']:
-            summed = df.iloc[idx:idx+2][SUM_COLS].sum()
-            row = df.iloc[idx].copy()
-            row[SUM_COLS] = summed
-            row['Name'] = row['Type'] = 'ReluGrad'
-            df = replace_rows(df, idx, 2, [row])
-            idx += 1
-            continue
-        idx += 1
-    return df
+
 
 # ---------- 主流程 ----------
 def main():
@@ -359,7 +342,6 @@ def main():
     df = fold_maxpool_backward(df)
     df = fold_linear_backward(df)
     df = fold_avgpool_backward(df)
-    df = fold_slice_backward(df)
     df = fold_conv_backward_first_layer(df)
 
 
