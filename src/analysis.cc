@@ -1115,8 +1115,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         
         else if (current_layer->operatorr->type==OperatorType::Dropout_T)
         {
-            //TODO: 暂时没改
-            kernel_list.emplace_back(CUDAKernelType::Dropout_Forward, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Dropout, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().inputs.insert(current_layer->musk_array);
             kernel_list.back().outputs.insert(current_layer->output_activation);
@@ -1156,7 +1155,6 @@ void layer_second_pass_scheduling_kernels_ascend(){
         }
         else if (current_layer->operatorr->type==OperatorType::Add_T)
         {
-            //TODO: 
             kernel_list.emplace_back(AscendKernelType::A_Add, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             for (int i = 0; i < current_layer->other_inputs.size(); i++)
@@ -1167,8 +1165,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         }
         else if (current_layer->operatorr->type==OperatorType::Concat_T)
         {
-            //TODO: 
-            kernel_list.emplace_back(CUDAKernelType::Concat_Forward, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Concat, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             for (int i = 0; i < current_layer->other_inputs.size(); i++)
             {
@@ -1178,8 +1175,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         }
         else if (current_layer->operatorr->type==OperatorType::Scale_T)
         {
-            //TODO: 
-            kernel_list.emplace_back(CUDAKernelType::Scale_Forward, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Scale, current_layer);
             kernel_list.back().inputs.insert(current_layer->input_activation);
             kernel_list.back().outputs.insert(current_layer->output_activation);
         }
@@ -1267,8 +1263,8 @@ void layer_second_pass_scheduling_kernels_ascend(){
         }
         else if (current_layer->operatorr->type==OperatorType::Dropout_T)
         {
-            // TODO: 暂时不改
-            kernel_list.emplace_back(CUDAKernelType::Dropout_Backward, current_layer);
+            
+            kernel_list.emplace_back(AscendKernelType::A_Dropout_Backward, current_layer);
             kernel_list.back().inputs.insert(current_layer->musk_array);
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().outputs.insert(current_layer->d_input);
@@ -1328,8 +1324,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         }
         else if (current_layer->operatorr->type==OperatorType::Concat_T)
         {
-            //TODO: 未修改
-            kernel_list.emplace_back(CUDAKernelType::Concat_Backward, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Concat_Backward, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().outputs.insert(current_layer->d_input);
             for (int j = 0; j < current_layer->other_d_inputs.size(); j++)
@@ -1339,8 +1334,7 @@ void layer_second_pass_scheduling_kernels_ascend(){
         }
         else if (current_layer->operatorr->type==OperatorType::Scale_T)
         {
-            //TODO: 未修改
-            kernel_list.emplace_back(CUDAKernelType::Scale_Backward, current_layer);
+            kernel_list.emplace_back(AscendKernelType::A_Scale_Backward, current_layer);
             kernel_list.back().inputs.insert(current_layer->d_output);
             kernel_list.back().outputs.insert(current_layer->d_input);
         }

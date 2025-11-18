@@ -26,6 +26,7 @@ typedef enum {
 typedef enum{
     A_Conv2D, A_Relu, A_TransData, A_MaxPoolWithArgMaxV1, A_ReduceMean, A_MatMulV2, A_Memset, A_BNTraining_Forward, A_Conv2DBackpropFilter, 
     A_Conv2DBackpropInput, A_ReluGrad, A_MaxPoolGradWithArgmaxV1, A_Fill, A_Mul, A_BNTrainingUpdateGrad, A_BNTrainingReduceGrad, A_makeLoss, A_Add, A_ReduceSum,
+    A_Concat, A_Avgpool, A_Dropout, A_Dropout_Backward, A_Concat_Backward, A_Avgpool_Backward, A_Scale, A_Scale_Backward
 }AscendKernelType;
 
 const std::string print_kerneltype_array [54] = {
@@ -39,7 +40,7 @@ const std::string print_kerneltype_array [54] = {
     "SoftmaxBasic_Backward", "Subtract_Forward", "Subtract_Backward", "Sum_Forward", "Sum_Backward", "Tanh_Forward", "Tanh_Backward", 
     "BatchMatMul_Forward", "BatchMatMul_Backward", "Apply_Grad", "Erf_Forward", "Erf_Backward"
 };
-const std::string print_ascendkerneltype_array[19] = {
+const std::string print_ascendkerneltype_array[] = {
     "A_Conv2D",
     "A_Relu",
     "A_TransData",
@@ -59,6 +60,14 @@ const std::string print_ascendkerneltype_array[19] = {
     "A_makeLoss",
     "A_Add",
     "A_ReduceSum",
+    "A_Concat",
+    "A_Avgpool",
+    "A_Dropout",
+    "A_Dropout_Backward",
+    "A_Concat_Backward",
+    "A_Avgpool_Backward",
+    "A_Scale",
+    "A_Scale_Backward"
 };
 
 
