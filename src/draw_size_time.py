@@ -38,7 +38,7 @@ plt.xlim(min_inactive_time, max_inactive_time)
 plt.ylim(min_size, max_size)
 
 # 保存图像
-plt.savefig('resnet_tensor_size_vs_inactive_time.png', dpi=300, bbox_inches='tight')
+plt.savefig('Inception_tensor_size_vs_inactive_time.png', dpi=300, bbox_inches='tight')
 
 # 显示图表
 plt.show()

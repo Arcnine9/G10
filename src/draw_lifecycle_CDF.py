@@ -26,5 +26,5 @@ plt.xlabel('CDF (%)')
 plt.ylabel('Tensor Inactive Period Total (µs)')
 plt.title('Distribution of Tensor Inactive Period Total Lengths (Excluding Zero Inactive Time)')
 plt.grid(True, which='both', ls='--', alpha=0.5)
-plt.savefig('tensor_inactive_periods_cdf_exclude_zero.png', dpi=300, bbox_inches='tight')  # 保存图像
+plt.savefig('Inception_tensor_inactive_periods_cdf_exclude_zero.png', dpi=300, bbox_inches='tight')  # 保存图像
 plt.show()

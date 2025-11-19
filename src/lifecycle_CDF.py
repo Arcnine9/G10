@@ -7,7 +7,7 @@ columns = ['tensor_id', 'size_B', 'birth_kid', 'death_kid', 'hidden_interval_num
 data = []
 
 # 读取文件
-with open('/home/user2/G10/results/ResNet152/Ascend/tensor_lifecycle.txt', 'r') as file:
+with open('/home/user2/G10/results/Inception/Ascend/tensor_lifecycle.txt', 'r') as file:
     next(file)  # 跳过标题行
     for line in file:
         parts = line.strip().split()
@@ -40,6 +40,6 @@ with open('/home/user2/G10/results/ResNet152/Ascend/tensor_lifecycle.txt', 'r') 
 df = pd.DataFrame(data, columns=columns)
 
 # 保存到新的CSV文件以便进一步分析
-df.to_csv('parsed_tensor_lifecycle.csv', index=False)
+df.to_csv('Inception_parsed_tensor_lifecycle.csv', index=False)
 
 print("数据已解析并保存到 parsed_tensor_lifecycle.csv")
