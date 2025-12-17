@@ -2283,7 +2283,88 @@ void Tensor::print_intervals(){
     
 }
 
+void Tensor::print_layer_intervals(){
+    std::cout << "=== Tensor Layer Intervals ===" << std::endl;
+    std::cout << "Tensor Name : " << this->name()
+              << "  size=" << this->size_in_byte << " B" << std::endl;
 
+    /* 1. 出生 & 死亡 */
+    {
+        int birth_k = this->live_interval[0];
+        int death_k = this->live_interval[1];
+        CUDAKernel* birth_ker = &kernel_list[birth_k];
+        CUDAKernel* death_ker = (death_k >= 0 ? &kernel_list[death_k] : nullptr);
+
+        Model_Layer* birth_layer = birth_ker ? birth_ker->parent_layer : nullptr;
+        Model_Layer* death_layer = death_ker ? death_ker->parent_layer : nullptr;
+
+        std::cout << "Birth:  kernel=" << birth_k
+                  << "  layer_id=" << (birth_layer ? birth_layer->layer_id : -1)
+                  << "  layer_name=";
+        if (birth_layer) birth_layer->print_name();
+        else std::cout << "NULL";
+        std::cout << std::endl;
+
+        if (death_layer) {
+            std::cout << "Death:  kernel=" << death_k
+                      << "  layer_id=" << death_layer->layer_id
+                      << "  layer_name=";
+            death_layer->print_name();
+            std::cout << std::endl;
+        } else {
+            std::cout << "Death:  kernel=" << death_k << "  (always alive)" << std::endl;
+        }
+    }
+
+    /* 2. hidden intervals */
+    std::cout << "Hidden Intervals (" << hidding_intervals.size() << "):" << std::endl;
+    for (size_t i = 0; i < hidding_intervals.size(); ++i) {
+        Hidding_Interval* hi = hidding_intervals[i];
+        int k0 = hi->kernelLevel_interval[0];
+        int k1 = hi->kernelLevel_interval[1];
+        CUDAKernel* ker0 = &kernel_list[k0];
+        CUDAKernel* ker1 = &kernel_list[k1];
+        Model_Layer* l0 = ker0 ? ker0->parent_layer : nullptr;
+        Model_Layer* l1 = ker1 ? ker1->parent_layer : nullptr;
+
+        std::cout << "  HID#" << i << ":  kernel [" << k0 << " .. " << k1 << "]  "
+                  << "layer ["
+                  << (l0 ? std::to_string(l0->layer_id) : "NULL") << " .. "
+                  << (l1 ? std::to_string(l1->layer_id) : "NULL") << "]  ";
+        if (l0) l0->print_name();
+        else std::cout << "NULL";
+        std::cout << " --> ";
+        if (l1) l1->print_name();
+        else std::cout << "NULL";
+        std::cout << std::endl;
+    }
+
+    /* 3. Tag 判别（birth_kernel -> parent_layer -> 指针比对） */
+    {
+        int birth_k = this->live_interval[0];
+        CUDAKernel* birth_ker = &kernel_list[birth_k];
+        Model_Layer* layer = birth_ker ? birth_ker->parent_layer : nullptr;
+        std::string tag = "unknown";
+
+        if (layer) {
+            auto check = [this](Tensor* t) { return t == this; };
+            if (layer->input_activation && check(layer->input_activation))      tag = "input";
+            else if (layer->output_activation && check(layer->output_activation)) tag = "output";
+            else if (layer->weight && check(layer->weight))                       tag = "weight";
+            else if (layer->bias && check(layer->bias))                           tag = "bias";
+            else if (layer->d_input && check(layer->d_input))                     tag = "d_input";
+            else if (layer->d_output && check(layer->d_output))                   tag = "d_output";
+            else if (layer->d_weight && check(layer->d_weight))                   tag = "d_weight";
+            else if (layer->d_bias && check(layer->d_bias))                       tag = "d_bias";
+            else if (birth_ker->workspace && check(birth_ker->workspace))         tag = "workspace";
+            // 如需更多 tag 继续 else if ...
+        }
+
+        std::cout << "Tag in birth layer: " << tag << std::endl;
+    }
+
+    std::cout << "=======================================" << std::endl;
+}
 
 void get_interval_time(){
     int kernel_num = kernel_list.size();

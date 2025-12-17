@@ -512,18 +512,18 @@ int main(int argc, char *argv[]) {
         printf("ready to yyparse\n");
         yyparse();
 
-        // std::ofstream log_file("layer_list.txt");
-        // std::streambuf* cout_buf = std::cout.rdbuf(); // 保存原缓冲区
-        // std::cout.rdbuf(log_file.rdbuf());            // 重定向到文件
+        std::ofstream log_file("Inception_layer_list.txt");
+        std::streambuf* cout_buf = std::cout.rdbuf(); // 保存原缓冲区
+        std::cout.rdbuf(log_file.rdbuf());            // 重定向到文件
 
-        // // 打印层信息（所有 print_name 输出会进入 layer_list.txt）
-        // for (int i = 0; i < forward_layers.size(); i++) {
-        //     forward_layers[i]->print_name();
-        // }
+        // 打印层信息（所有 print_name 输出会进入 layer_list.txt）
+        for (int i = 0; i < forward_layers.size(); i++) {
+            forward_layers[i]->print_name();
+        }
 
-        // // 恢复 std::cout
-        // std::cout.rdbuf(cout_buf);
-        // log_file.close();
+        // 恢复 std::cout
+        std::cout.rdbuf(cout_buf);
+        log_file.close();
 
         std::printf("ready to layer analyse\n");
         layer_pre_pass_datasize();
@@ -610,7 +610,53 @@ int main(int argc, char *argv[]) {
         printf("Tensor lifecycle exported to %s\n", lifecycle_file.c_str());
     }
 
+// ======= 新增：导出含隐藏区间的张量详情 =======
+    {
+        RedirStdOut r("tensor_layer.config");
+        int skipped_global = 0, skipped_no_hidden = 0, exported = 0;
+        for (Tensor* t : tensor_list) {
+            if (t->is_global_weight) { ++skipped_global; continue; }
+            if (t->hidding_intervals.empty()) { ++skipped_no_hidden; continue; }
 
+            t->print_layer_intervals();                 // 会打印头、出生死亡、HID、Tag
+
+            /* 不同向量间用一行分隔符，方便 grep / awk 解析 */
+            std::cout << "----------  tensor_id=" << t->tensor_id
+                    << "  END  ----------" << std::endl;
+            ++exported;
+        }
+        std::cerr << "[DEBUG] tensor_list.total=" << tensor_list.size()
+          << "  skipped_global=" << skipped_global
+          << "  skipped_no_hidden=" << skipped_no_hidden
+          << "  exported=" << exported << std::endl;
+    }
+
+    //hookable analyze
+    std::set<OperatorType> hookable_types = {
+        Conv2d_T, BatchNorm2d_T, ReLU_T, MaxPool2d_T, AdaptiveAvgPool2d_T, Linear_T, Dropout_T, Add_T, Concat_T
+    };
+    int hook_counter = 1;
+    for (size_t i = 0; i < forward_layers.size(); i++) {
+        Model_Layer* layer = forward_layers[i];
+        // 判断当前层的类型是否在可被hook的类型表中
+        if (hookable_types.find(layer->operatorr->type) != hookable_types.end()) {
+            layer->be_hooked = true; // 设置为可被hook
+            layer->hook_id = hook_counter++; // 分配hook_id
+        } else {
+            layer->be_hooked = false; // 不可被hook
+            layer->hook_id = 0;
+        }
+    }
+
+    {
+        RedirStdOut r("layers_hook.config"); // 将输出重定向到文件
+        for (size_t i = 0; i < forward_layers.size(); i++) {
+            if (forward_layers[i]->be_hooked) {
+                forward_layers[i]->print_name(); // 打印可被hook的层的名称
+            }
+        }
+    }
+    //TODO: based on hookable layers, do tensor mem analysis. then eventCreator
 
     // Cleanup
     for (int i = 0; i < forward_layers.size(); i++)

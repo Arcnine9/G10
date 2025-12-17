@@ -341,6 +341,7 @@ class Tensor
         void print() const;
         void print_liveness();
         void print_intervals();
+        void print_layer_intervals();
 
         int tensor_id;
         long long size_in_byte;
@@ -385,7 +386,9 @@ class Model_Layer
     int C;
     int H;
     int W;
-
+    //Ascend hookable migration params
+    bool be_hooked = true;   //layer should be hook and event scheduled
+    int hook_id = 0;       //be initialized after analysis
     //Concat
     std::vector<int> input_Cs;
 
