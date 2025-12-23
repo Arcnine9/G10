@@ -342,7 +342,6 @@ class Tensor
         void print_liveness();
         void print_intervals();
         void print_layer_intervals();
-
         int tensor_id;
         long long size_in_byte;
         long long raw_size_byte; 
