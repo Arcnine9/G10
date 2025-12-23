@@ -633,7 +633,7 @@ int main(int argc, char *argv[]) {
 
     //hookable analyze
     std::set<OperatorType> hookable_types = {
-        Conv2d_T, BatchNorm2d_T, ReLU_T, MaxPool2d_T, AdaptiveAvgPool2d_T, Linear_T, Dropout_T, Add_T, Concat_T
+        Conv2d_T, BatchNorm2d_T, ReLU_T, MaxPool2d_T, AdaptiveAvgPool2d_T, Linear_T, Dropout_T, Add_T, Concat_T, AvgPool2d_T
     };
     int hook_counter = 1;
     for (size_t i = 0; i < forward_layers.size(); i++) {
@@ -644,7 +644,7 @@ int main(int argc, char *argv[]) {
             layer->hook_id = hook_counter++; // 分配hook_id
         } else {
             layer->be_hooked = false; // 不可被hook
-            layer->hook_id = 0;
+            layer->hook_id = i>0?hook_counter:0; // 前向时继承后一层的hook_id，使得卸载尽可能晚；反向时后一层hook_id预取尽可能早
         }
     }
 
@@ -657,12 +657,82 @@ int main(int argc, char *argv[]) {
         }
     }
     //TODO: based on hookable layers, do tensor mem analysis. then eventCreator
+    // 使用vector来存储Hook_Node，假设hook_id是连续的
+    std::vector<Hook_Node*> hook_nodes(hook_counter, nullptr);
+
+    // 初始化hook_nodes，确保每个hook_id都有对应的Hook_Node
+    for (size_t i = 0; i < forward_layers.size(); i++) {
+        Model_Layer* layer = forward_layers[i];
+        // 如果当前hook_id对应的Hook_Node尚未初始化，则创建一个新的Hook_Node
+        if (hook_nodes[layer->hook_id] == nullptr) {
+            hook_nodes[layer->hook_id] = new Hook_Node(layer->hook_id);
+        }
+    }
+
+    // 遍历所有Tensor，更新Hook_Node信息
+    long long total_forward_size = 0; // 用于记录正向传播的累积大小
+    for (Tensor* tensor : tensor_list) {
+        if(tensor->is_global_weight){
+            total_forward_size += tensor->size_in_byte / (1024 * 1024); // 全局权重不参与hook分析，但计入总正向大小
+            continue; // 全局权重不参与hook分析
+        }
+        int birth_k = tensor->live_interval[0];
+        int death_k = tensor->live_interval[1];
+        CUDAKernel* birth_ker = &kernel_list[birth_k];
+        CUDAKernel* death_ker = (death_k >= 0 ? &kernel_list[death_k] : nullptr);
+
+        Model_Layer* birth_layer = birth_ker ? birth_ker->parent_layer : nullptr;
+        Model_Layer* death_layer = death_ker ? death_ker->parent_layer : nullptr;
+
+        if (birth_layer) {
+            Hook_Node* node = hook_nodes[birth_layer->hook_id];
+            long long size_mb = tensor->size_in_byte / (1024 * 1024); // 转换为MB
+            node->alloc_size += size_mb;
+        }
+
+        if (death_layer) {
+            Hook_Node* node = hook_nodes[death_layer->hook_id];
+            long long size_mb = tensor->size_in_byte / (1024 * 1024); // 转换为MB
+            node->release_size += size_mb;
+        }
+    }
+
+    // 正向遍历，累加所有alloc_size到forward_sum_size
+    
+    for (size_t i = 0; i < hook_nodes.size(); i++) {
+        if (hook_nodes[i] != nullptr) {
+            Hook_Node* node = hook_nodes[i];
+            total_forward_size += node->alloc_size; 
+            node->forward_sum_size = total_forward_size; 
+        }
+    }
+
+    for (size_t i = hook_nodes.size(); i > 0; i--) {
+        if (hook_nodes[i - 1] != nullptr) {
+            Hook_Node* node = hook_nodes[i - 1];
+            total_forward_size -= node->release_size;
+            node->backward_sum_size = total_forward_size;
+        }
+    }
+
+    {
+        RedirStdOut r("hook_mem.config"); // 将输出重定向到文件
+        for (size_t i = 0; i < hook_nodes.size(); i++) {
+            if (hook_nodes[i] != nullptr) {
+                Hook_Node* node = hook_nodes[i];
+                node->print_info();
+            }
+        }
+    }
+
 
     // Cleanup
     for (int i = 0; i < forward_layers.size(); i++)
         delete forward_layers[i];
     for (int i = 0; i < tensor_list.size(); i++)
         delete tensor_list[i];
+    for (int i = 0; i < hook_nodes.size(); i++)
+        delete hook_nodes[i];
 
     return (ReportError::NumErrors() == 0 ? 0 : -1);
 }

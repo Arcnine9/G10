@@ -226,7 +226,7 @@ void Tensor::print() const {
 
 
 void Model_Layer::print_name(){
-    std::cout<<"Layer ID:"<<layer_id<<"; Name:";
+    std::cout<<"Hook ID:"<<hook_id<<"; Name:";
     switch (operatorr->type)
     {
     case OperatorType::AdaptiveAvgPool2d_T :
@@ -2283,7 +2283,35 @@ void Tensor::print_intervals(){
     
 }
 
-void Tensor::print_layer_intervals(){
+void Tensor::print_layer_intervals() {
+    // 如果tag为unknown，直接返回，不打印任何内容
+    {
+        int birth_k = this->live_interval[0];
+        CUDAKernel* birth_ker = &kernel_list[birth_k];
+        Model_Layer* layer = birth_ker ? birth_ker->parent_layer : nullptr;
+        std::string tag = "unknown";
+
+        if (layer) {
+            auto check = [this](Tensor* t) { return t == this; };
+            if (layer->input_activation && check(layer->input_activation))      tag = "input";
+            else if (layer->output_activation && check(layer->output_activation)) tag = "output";
+            else if (layer->weight && check(layer->weight))                       tag = "weight";
+            else if (layer->bias && check(layer->bias))                           tag = "bias";
+            else if (layer->d_input && check(layer->d_input))                     tag = "d_input";
+            else if (layer->d_output && check(layer->d_output))                   tag = "d_output";
+            else if (layer->d_weight && check(layer->d_weight))                   tag = "d_weight";
+            else if (layer->d_bias && check(layer->d_bias))                       tag = "d_bias";
+            else if (birth_ker->workspace && check(birth_ker->workspace))         tag = "workspace";
+            // 如需更多 tag 继续 else if ...
+        }
+
+        // 如果tag为unknown，直接返回
+        if (tag == "unknown") {
+            return; // 跳过未知的Tensor
+        }
+    }
+
+    // 如果tag不是unknown，继续打印信息
     std::cout << "=== Tensor Layer Intervals ===" << std::endl;
     std::cout << "Tensor Name : " << this->name()
               << "  size=" << this->size_in_byte << " B" << std::endl;
@@ -2301,8 +2329,12 @@ void Tensor::print_layer_intervals(){
         std::cout << "Birth:  kernel=" << birth_k
                   << "  layer_id=" << (birth_layer ? birth_layer->layer_id : -1)
                   << "  layer_name=";
-        if (birth_layer) birth_layer->print_name();
-        else std::cout << "NULL";
+        if (birth_layer) {
+            birth_layer->print_name();
+            std::cout << "  hook_id=" << birth_layer->hook_id;
+        } else {
+            std::cout << "NULL";
+        }
         std::cout << std::endl;
 
         if (death_layer) {
@@ -2310,6 +2342,7 @@ void Tensor::print_layer_intervals(){
                       << "  layer_id=" << death_layer->layer_id
                       << "  layer_name=";
             death_layer->print_name();
+            std::cout << "  hook_id=" << death_layer->hook_id;
             std::cout << std::endl;
         } else {
             std::cout << "Death:  kernel=" << death_k << "  (always alive)" << std::endl;
@@ -2331,40 +2364,25 @@ void Tensor::print_layer_intervals(){
                   << "layer ["
                   << (l0 ? std::to_string(l0->layer_id) : "NULL") << " .. "
                   << (l1 ? std::to_string(l1->layer_id) : "NULL") << "]  ";
-        if (l0) l0->print_name();
-        else std::cout << "NULL";
-        std::cout << " --> ";
-        if (l1) l1->print_name();
-        else std::cout << "NULL";
-        std::cout << std::endl;
-    }
-
-    /* 3. Tag 判别（birth_kernel -> parent_layer -> 指针比对） */
-    {
-        int birth_k = this->live_interval[0];
-        CUDAKernel* birth_ker = &kernel_list[birth_k];
-        Model_Layer* layer = birth_ker ? birth_ker->parent_layer : nullptr;
-        std::string tag = "unknown";
-
-        if (layer) {
-            auto check = [this](Tensor* t) { return t == this; };
-            if (layer->input_activation && check(layer->input_activation))      tag = "input";
-            else if (layer->output_activation && check(layer->output_activation)) tag = "output";
-            else if (layer->weight && check(layer->weight))                       tag = "weight";
-            else if (layer->bias && check(layer->bias))                           tag = "bias";
-            else if (layer->d_input && check(layer->d_input))                     tag = "d_input";
-            else if (layer->d_output && check(layer->d_output))                   tag = "d_output";
-            else if (layer->d_weight && check(layer->d_weight))                   tag = "d_weight";
-            else if (layer->d_bias && check(layer->d_bias))                       tag = "d_bias";
-            else if (birth_ker->workspace && check(birth_ker->workspace))         tag = "workspace";
-            // 如需更多 tag 继续 else if ...
+        if (l0) {
+            l0->print_name();
+            std::cout << "  hook_id=" << l0->hook_id;
+        } else {
+            std::cout << "NULL";
         }
-
-        std::cout << "Tag in birth layer: " << tag << std::endl;
+        std::cout << " --> ";
+        if (l1) {
+            l1->print_name();
+            std::cout << "  hook_id=" << l1->hook_id;
+        } else {
+            std::cout << "NULL";
+        }
+        std::cout << std::endl;
     }
 
     std::cout << "=======================================" << std::endl;
 }
+
 
 void get_interval_time(){
     int kernel_num = kernel_list.size();
