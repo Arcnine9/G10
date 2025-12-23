@@ -610,26 +610,7 @@ int main(int argc, char *argv[]) {
         printf("Tensor lifecycle exported to %s\n", lifecycle_file.c_str());
     }
 
-// ======= 新增：导出含隐藏区间的张量详情 =======
-    {
-        RedirStdOut r("tensor_layer.config");
-        int skipped_global = 0, skipped_no_hidden = 0, exported = 0;
-        for (Tensor* t : tensor_list) {
-            if (t->is_global_weight) { ++skipped_global; continue; }
-            if (t->hidding_intervals.empty()) { ++skipped_no_hidden; continue; }
 
-            t->print_layer_intervals();                 // 会打印头、出生死亡、HID、Tag
-
-            /* 不同向量间用一行分隔符，方便 grep / awk 解析 */
-            std::cout << "----------  tensor_id=" << t->tensor_id
-                    << "  END  ----------" << std::endl;
-            ++exported;
-        }
-        std::cerr << "[DEBUG] tensor_list.total=" << tensor_list.size()
-          << "  skipped_global=" << skipped_global
-          << "  skipped_no_hidden=" << skipped_no_hidden
-          << "  exported=" << exported << std::endl;
-    }
 
     //hookable analyze
     std::set<OperatorType> hookable_types = {
@@ -656,6 +637,29 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+
+    // ======= 新增：导出含隐藏区间的张量详情 =======
+    {
+        RedirStdOut r("tensor_layer.config");
+        int skipped_global = 0, skipped_no_hidden = 0, exported = 0;
+        for (Tensor* t : tensor_list) {
+            if (t->is_global_weight) { ++skipped_global; continue; }
+            if (t->hidding_intervals.empty()) { ++skipped_no_hidden; continue; }
+
+            t->print_layer_intervals();                 // 会打印头、出生死亡、HID、Tag
+
+            /* 不同向量间用一行分隔符，方便 grep / awk 解析 */
+            std::cout << "----------  tensor_id=" << t->tensor_id
+                    << "  END  ----------" << std::endl;
+            ++exported;
+        }
+        std::cerr << "[DEBUG] tensor_list.total=" << tensor_list.size()
+          << "  skipped_global=" << skipped_global
+          << "  skipped_no_hidden=" << skipped_no_hidden
+          << "  exported=" << exported << std::endl;
+    }
+
+
     //TODO: based on hookable layers, do tensor mem analysis. then eventCreator
     // 使用vector来存储Hook_Node，假设hook_id是连续的
     std::vector<Hook_Node*> hook_nodes(hook_counter, nullptr);

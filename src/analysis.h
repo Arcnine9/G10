@@ -89,10 +89,7 @@ class Hook_Node{
         long long forward_sum_size = 0;
         long long backward_sum_size = 0;
         Hook_Node(int id) : hook_id(id) {}
-        void print_info(){
-            printf("Hook_ID: %d, Alloc_size: %lld MB, Release_size: %lld MB, Forward_sum_size: %lld MB, Backward_sum_size: %lld MB\n",
-                hook_id, alloc_size, release_size, forward_sum_size, backward_sum_size);
-        }
+        void print_info();
 };
 
 

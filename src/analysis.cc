@@ -53,6 +53,15 @@ std::vector<Hidding_Interval*> offloeded_local_intervals;
 std::priority_queue<fl_pending_event, std::vector<fl_pending_event>, Fl_event_less> fl_pending_event_queue;
 
 
+void Hook_Node::print_info(){
+    std::cout << "Hook_ID: " << this->hook_id << ", Alloc_size: " << this->alloc_size << "MB allocated, "
+            << "Release_size: " << this->release_size << "MB released, "
+            << "Forward_Sum_Size: " << this->forward_sum_size << "MB, "
+            << "Backward_Sum_Size: " << this->backward_sum_size << "MB"
+            << std::endl;
+}
+
+
 // extern const std::string print_pagelocation_array[5];
 
 Model_Layer::Model_Layer(){
