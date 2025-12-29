@@ -3639,7 +3639,7 @@ void scheduling_prefetch(){
                     if (GPU_resident_memory_estimation[j] > a->GPU_mem_line)
                     {
                         area_can_reduce_a += a->the_tensor->size_in_byte * (kernel_time_table[j+1] - kernel_time_table[j]);
-                    }
+                      }
                 }
             }
             else
@@ -3699,7 +3699,8 @@ void scheduling_prefetch(){
         });
 
 
-        
+
+
         // The interval list is already sorted
         Hidding_Interval* curr_interval = interval_list[0];
         curr_interval->print();
