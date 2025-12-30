@@ -13,6 +13,7 @@
 using Simulator::DataMovementHint;
 using Simulator::PageLocation;
 
+extern bool can_offload_global_weight;
 extern std::string migration_policy_str;
 extern std::string eviction_policy_str;
 extern std::vector<Model_Layer*> forward_layers;
@@ -105,6 +106,10 @@ void init_hook_nodes(){
                 hook_nodes.push_back(Hook_Node(time_id++, layer->hook_id, layer->layer_id,is_backward,i-1));//end of forward
                 kernel->hooktime_id = time_id - 1;
             }
+            kernel->hooktime_id = time_id;
+        }
+        else{
+            kernel->hooktime_id = time_id;
         }
         if(kernel->type_A == AscendKernelType::A_makeLoss)
         {
@@ -134,15 +139,16 @@ int get_tid_by_kid(int kid){
         return hook_nodes.size(); //return after all hooks
     }
     CUDAKernel* kernel = &kernel_list[kid];
-    if(kernel->hooktime_id == -1){
-        for(int i = kid+1; i < kernel_list.size(); i++){
-            CUDAKernel* next_kernel = &kernel_list[i];
-            if(next_kernel->hooktime_id != -1){
-                return next_kernel->hooktime_id;
-            }
-        }
-        //means no hook layer, so we need to find proper hook layer
-    }
+    // if(kernel->hooktime_id == -1){
+    //     for(int i = kid+1; i < kernel_list.size(); i++){
+    //         CUDAKernel* next_kernel = &kernel_list[i];
+    //         if(next_kernel->hooktime_id != -1){
+    //             return next_kernel->hooktime_id;
+    //         }
+    //     }
+    //     //means no hook layer, so we need to find proper hook layer
+    // }
+    Assert(kernel->hooktime_id != -1);
     return kernel->hooktime_id;
 }
 
@@ -2409,29 +2415,30 @@ void Tensor::init_tag(){
             else if (layer->d_bias && check(layer->d_bias))                       tag = "d_bias";
             else if (birth_ker->workspace && check(birth_ker->workspace))         tag = "workspace";
         }
+        
 }
 
 void Tensor::print_layer_intervals()
 {
-    // 如果tag为unknown，直接返回，不打印任何内容
+    // // 如果tag为unknown，直接返回，不打印任何内容
     
-    int birth_k = this->live_interval[0];
-    CUDAKernel* birth_ker = &kernel_list[birth_k];
-    Model_Layer* layer = birth_ker ? birth_ker->parent_layer : nullptr;
+    // int birth_k = this->live_interval[0];
+    // CUDAKernel* birth_ker = &kernel_list[birth_k];
+    // Model_Layer* layer = birth_ker ? birth_ker->parent_layer : nullptr;
 
-    if (layer) {
-        auto check = [this](Tensor* t) { return t == this; };
-        if (layer->input_activation && check(layer->input_activation))      tag = "input";
-        else if (layer->output_activation && check(layer->output_activation)) tag = "output";
-        else if (layer->weight && check(layer->weight))                       tag = "weight";
-        else if (layer->bias && check(layer->bias))                           tag = "bias";
-        else if (layer->d_input && check(layer->d_input))                     tag = "d_input";
-        else if (layer->d_output && check(layer->d_output))                   tag = "d_output";
-        else if (layer->d_weight && check(layer->d_weight))                   tag = "d_weight";
-        else if (layer->d_bias && check(layer->d_bias))                       tag = "d_bias";
-        else if (birth_ker->workspace && check(birth_ker->workspace))         tag = "workspace";
-        // 如需更多 tag 继续 else if ...
-    }
+    // if (layer) {
+    //     auto check = [this](Tensor* t) { return t == this; };
+    //     if (layer->input_activation && check(layer->input_activation))      tag = "input";
+    //     else if (layer->output_activation && check(layer->output_activation)) tag = "output";
+    //     else if (layer->weight && check(layer->weight))                       tag = "weight";
+    //     else if (layer->bias && check(layer->bias))                           tag = "bias";
+    //     else if (layer->d_input && check(layer->d_input))                     tag = "d_input";
+    //     else if (layer->d_output && check(layer->d_output))                   tag = "d_output";
+    //     else if (layer->d_weight && check(layer->d_weight))                   tag = "d_weight";
+    //     else if (layer->d_bias && check(layer->d_bias))                       tag = "d_bias";
+    //     else if (birth_ker->workspace && check(birth_ker->workspace))         tag = "workspace";
+    //     // 如需更多 tag 继续 else if ...
+    // }
 
         
 
@@ -3595,6 +3602,7 @@ void scheduling_prefetch(){
                     if (hookNode_time_table[j] <= deallo_finish_time_precise && hookNode_time_table[j+1] > deallo_finish_time_precise)
                     {
                         finish_index = j;
+                        // std::cout<<"find release index " << finish_index <<std::endl;
                         break;
                     }
                 }
@@ -3616,7 +3624,9 @@ void scheduling_prefetch(){
 
     
     }
+    
     std::cout << "First pass done for finding memory pressure region." << std::endl;
+    print_GPU_mem_estimation();
     bool is_under_pressure = false;
     int pressure_region[2]; 
     pressure_region[0] = -1;
@@ -3655,131 +3665,131 @@ void scheduling_prefetch(){
 
 
     //Refill gpu memory with all the tensors
-    GPU_resident_memory_estimation.resize(hook_num);
-    for (int i = 0; i < hook_num; i++)
-    {
-        GPU_resident_memory_estimation[i] = total_mem_size;
-    }
-    std::cout<<"Before pre-deallocation"<<std::endl;
+    // GPU_resident_memory_estimation.resize(hook_num);
+    // for (int i = 0; i < hook_num; i++)
+    // {
+    //     GPU_resident_memory_estimation[i] = total_mem_size;
+    // }
+    // std::cout<<"Before pre-deallocation"<<std::endl;
 
 
     //Except for A0, pre-deallocation all other tensors - Second pass, schedule the smart migration instructions
-    for (int i = 1; i < tensor_list.size(); i++)
-    {
-        if (check_GPU_OK(target_mem_line))    //If already OK, end this loop
-        {
-            break;
-        }
+    // for (int i = 1; i < tensor_list.size(); i++)
+    // {
+    //     if (check_GPU_OK(target_mem_line))    //If already OK, end this loop
+    //     {
+    //         break;
+    //     }
         
-        Tensor* curr_tensor = tensor_list[i];
-        if (!curr_tensor->is_global_weight && curr_tensor->live_interval[0]>=0)
-        {
-            //First do pre-alloc
-            //TODO: EDITED WE DONT PRE_ALLOC IN HOOK SITUATION, we only need tensor ptr we need to offload I think cuz hook is not good
-            //TODO: NEED TO CHECK IF THIS AFFECTS THE RESULTS
-            int issue_index;
-            Assert(curr_tensor->live_interval[0]>=0 && curr_tensor->live_interval[0]<=kernel_num);
-            int birth_date_index = get_tid_by_kid(curr_tensor->live_interval[0]);
-            // std::cout<<"Scheduling pre-allocation for tensor id: "<< curr_tensor->tensor_id << ", birth index is: "<< birth_date_index <<std::endl;
-            double estimated_pre_alloc_time;
-            if (is_under_pressure && birth_date_index >= pressure_region[0] && birth_date_index <= pressure_region[1])
-            {
-                estimated_pre_alloc_time = curr_tensor->size_in_byte * GPU_malloc_uspB;
-                //estimated_pre_alloc_time = estimated_pre_alloc_time * (1 + delta_parameter);
-            }
-            else
-            {
-                estimated_pre_alloc_time = curr_tensor->size_in_byte * GPU_malloc_uspB;
-            }
+    //     Tensor* curr_tensor = tensor_list[i];
+    //     if (!curr_tensor->is_global_weight && curr_tensor->live_interval[0]>=0)
+    //     {
+    //         //First do pre-alloc
+    //         //TODO: EDITED WE DONT PRE_ALLOC IN HOOK SITUATION, we only need tensor ptr we need to offload I think cuz hook is not good
+    //         //TODO: NEED TO CHECK IF THIS AFFECTS THE RESULTS
+    //         int issue_index;
+    //         Assert(curr_tensor->live_interval[0]>=0 && curr_tensor->live_interval[0]<=kernel_num);
+    //         int birth_date_index = get_tid_by_kid(curr_tensor->live_interval[0]);
+    //         // std::cout<<"Scheduling pre-allocation for tensor id: "<< curr_tensor->tensor_id << ", birth index is: "<< birth_date_index <<std::endl;
+    //         double estimated_pre_alloc_time;
+    //         if (is_under_pressure && birth_date_index >= pressure_region[0] && birth_date_index <= pressure_region[1])
+    //         {
+    //             estimated_pre_alloc_time = curr_tensor->size_in_byte * GPU_malloc_uspB;
+    //             //estimated_pre_alloc_time = estimated_pre_alloc_time * (1 + delta_parameter);
+    //         }
+    //         else
+    //         {
+    //             estimated_pre_alloc_time = curr_tensor->size_in_byte * GPU_malloc_uspB;
+    //         }
             
-            double pre_alloc_start_time_precise = hookNode_time_table[birth_date_index] - estimated_pre_alloc_time;
-            if (pre_alloc_start_time_precise < 0)
-            {
-                // if (migration_policy_str!="G10GDSSSD" && migration_policy_str!="G10GDSFULL")
-                // {
-                //     DataMovementHint pre_allo(PageLocation::NOT_KNOWN, PageLocation::IN_GPU, 0, curr_tensor);
-                //     movement_hints.push_back(pre_allo);
-                // }
-                issue_index = 0;
+    //         double pre_alloc_start_time_precise = hookNode_time_table[birth_date_index] - estimated_pre_alloc_time;
+    //         if (pre_alloc_start_time_precise < 0)
+    //         {
+    //             // if (migration_policy_str!="G10GDSSSD" && migration_policy_str!="G10GDSFULL")
+    //             // {
+    //             //     DataMovementHint pre_allo(PageLocation::NOT_KNOWN, PageLocation::IN_GPU, 0, curr_tensor);
+    //             //     movement_hints.push_back(pre_allo);
+    //             // }
+    //             issue_index = 0;
 
-            }
-            else
-            {
+    //         }
+    //         else
+    //         {
                     
-                for (int j = 0; j < birth_date_index; j++)
-                {
-                    if (hookNode_time_table[j] <= pre_alloc_start_time_precise && hookNode_time_table[j+1] > pre_alloc_start_time_precise)
-                    {
-                        // if (migration_policy_str!="G10GDSSSD" && migration_policy_str!="G10GDSFULL"){
-                        //     DataMovementHint pre_allo(PageLocation::NOT_KNOWN, PageLocation::IN_GPU, j, curr_tensor);
-                        //     movement_hints.push_back(pre_allo);
-                        // }
-                        issue_index = j;
-                        break;
-                    }
-                }
+    //             for (int j = 0; j < birth_date_index; j++)
+    //             {
+    //                 if (hookNode_time_table[j] <= pre_alloc_start_time_precise && hookNode_time_table[j+1] > pre_alloc_start_time_precise)
+    //                 {
+    //                     // if (migration_policy_str!="G10GDSSSD" && migration_policy_str!="G10GDSFULL"){
+    //                     //     DataMovementHint pre_allo(PageLocation::NOT_KNOWN, PageLocation::IN_GPU, j, curr_tensor);
+    //                     //     movement_hints.push_back(pre_allo);
+    //                     // }
+    //                     issue_index = j;
+    //                     break;
+    //                 }
+    //             }
                 
-                //minus mem
-                for (int j = 0; j < issue_index; j++)
-                {
-                   GPU_resident_memory_estimation[j] -= curr_tensor->size_in_byte;
-                }
+    //             //minus mem
+    //             for (int j = 0; j < issue_index; j++)
+    //             {
+    //                GPU_resident_memory_estimation[j] -= curr_tensor->size_in_byte;
+    //             }
                     
-            }
+    //         }
 
-            //EDITED: Same we leave deallocation for auto release
+    //         //EDITED: Same we leave deallocation for auto release
 
-            //Second do pre-deallocation
-            int death_index = curr_tensor->live_interval[1];
-            if (curr_tensor->live_interval[1]==-1)
-            {
-                death_index = curr_tensor->live_interval[0] + 1;
-            }
-            Assert(death_index>=0 && death_index <= kernel_num);
-            death_index = get_tid_by_kid(death_index);
+    //         //Second do pre-deallocation
+    //         int death_index = curr_tensor->live_interval[1];
+    //         if (curr_tensor->live_interval[1]==-1)
+    //         {
+    //             death_index = curr_tensor->live_interval[0] + 1;
+    //         }
+    //         Assert(death_index>=0 && death_index <= kernel_num);
+    //         death_index = get_tid_by_kid(death_index);
             
-            // if (migration_policy_str!="G10GDSSSD" && migration_policy_str!="G10GDSFULL"){
-            //     DataMovementHint pre_dallo(PageLocation::NOT_KNOWN, PageLocation::NOT_PRESENT, death_index, curr_tensor);
-            //     movement_hints.push_back(pre_dallo);
-            // }
+    //         // if (migration_policy_str!="G10GDSSSD" && migration_policy_str!="G10GDSFULL"){
+    //         //     DataMovementHint pre_dallo(PageLocation::NOT_KNOWN, PageLocation::NOT_PRESENT, death_index, curr_tensor);
+    //         //     movement_hints.push_back(pre_dallo);
+    //         // }
 
-            //double deallo_time = curr_tensor->size_in_byte * GPU_free_uspB;
-            double deallo_time = 0;
-            double deallo_finish_time_precise = hookNode_time_table[death_index];
-            if (deallo_finish_time_precise < hookNode_time_table[kernel_num])
-            {
-                int finish_index = -1;
-                for (int j = death_index; j < hook_num; j++)
-                {
-                    if (hookNode_time_table[j] <= deallo_finish_time_precise && hookNode_time_table[j+1] > deallo_finish_time_precise)
-                    {
-                        finish_index = j;
-                        break;
-                    }
-                }
-                //Assert(finish_index >= 0);
-                if (finish_index == -1)
-                {
-                    finish_index = hook_num;
-                }
+    //         //double deallo_time = curr_tensor->size_in_byte * GPU_free_uspB;
+    //         double deallo_time = 0;
+    //         double deallo_finish_time_precise = hookNode_time_table[death_index];
+    //         if (deallo_finish_time_precise < hookNode_time_table[kernel_num])
+    //         {
+    //             int finish_index = -1;
+    //             for (int j = death_index; j < hook_num; j++)
+    //             {
+    //                 if (hookNode_time_table[j] <= deallo_finish_time_precise && hookNode_time_table[j+1] > deallo_finish_time_precise)
+    //                 {
+    //                     finish_index = j;
+    //                     break;
+    //                 }
+    //             }
+    //             //Assert(finish_index >= 0);
+    //             if (finish_index == -1)
+    //             {
+    //                 finish_index = hook_num;
+    //             }
                 
 
-                //minus mem
-                for (int j = finish_index; j < hook_num; j++)
-                {
-                    GPU_resident_memory_estimation[j] -= curr_tensor->size_in_byte;
-                }
-            }
-        }
+    //             //minus mem
+    //             for (int j = finish_index; j < hook_num; j++)
+    //             {
+    //                 GPU_resident_memory_estimation[j] -= curr_tensor->size_in_byte;
+    //             }
+    //         }
+    //     }
 
     
-    }
+    // }
 
 
 
     
     std::cout<<"After pre-deallocation"<<std::endl;
-    print_GPU_mem_estimation();
+    // print_GPU_mem_estimation();
 
     for (int j = 0; j < GPU_resident_memory_estimation.size(); j++)
     {
@@ -3789,8 +3799,8 @@ void scheduling_prefetch(){
             hill_index = j;
         }
     }
+    std::cout<<"Hill index is: "<< hill_index << ", Hill mem is: "<< hill_mem <<std::endl;
     
-
     //Fill the looped extend kernel time table      0 - 2 * kernel_num
     std::vector<double> hookNode_time_table_extended;
     hookNode_time_table_extended.resize(hook_num);
@@ -3903,24 +3913,33 @@ void scheduling_prefetch(){
 
         // The interval list is already sorted
         Hidding_Interval* curr_interval = interval_list[0];
-        curr_interval->print();
+        // curr_interval->print();
         if (curr_interval->is_offloaded)
         {
             break;
         }
-        
+        if(can_offload_global_weight==false)
+        {
+            if (curr_interval->the_tensor->is_global_weight)
+            {
+                curr_interval->is_offloaded = true;
+                continue;
+            }
+        }
+            
         if (check_GPU_OK_interval(target_mem_line, curr_interval->kernelLevel_interval[0], curr_interval->kernelLevel_interval[1]))
         {
             curr_interval->is_offloaded = true;
             continue;
         }
 
-        if(curr_interval->the_tensor->tag == "unknown") //BN V1 and V2 tensor we cannot get
-        {
-            curr_interval->is_offloaded = true;
-            tag_failed_count++;
-            continue;
-        }
+        // if(curr_interval->the_tensor->tag == "unknown") //BN V1 and V2 tensor we cannot get
+        // {
+        //     std::cout<<" Tensor id: " << curr_interval->the_tensor->tensor_id << " is unknown type, cannot offload it." <<std::endl;
+        //     curr_interval->is_offloaded = true;
+        //     tag_failed_count++;
+        //     continue;
+        // }
 
         int cha;
         if (!curr_interval->is_looped)
@@ -4579,7 +4598,7 @@ void print_prefetch_table(){
 void print_GPU_mem_estimation(){
     for (int i = 0; i < hook_nodes.size(); i++)
     {
-        std::cout<<"Kernel "<<i<<": "<<GPU_resident_memory_estimation[i]<<std::endl;
+        std::cout<<"HookID "<<i<<": "<<GPU_resident_memory_estimation[i]<<std::endl;
     }
     
 }

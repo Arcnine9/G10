@@ -56,6 +56,7 @@ extern double PCIe_latency_us;  // NOT USED FOR NOW
 extern int PCIe_batch_size_in_page;
 // Other sim param
 extern bool use_prefetch;
+extern bool can_offload_global_weight;
 extern std::string migration_policy_str;
 extern std::string eviction_policy_str;
 extern Simulator::MigPolicy migration_policy;
@@ -442,7 +443,7 @@ int main(int argc, char *argv[]) {
         else if (command == "use_prefetch")             { use_prefetch = std::stoi(value) != 0; }
         else if (command == "eviction_policy")          { eviction_policy_str = value; }
         else if (command == "migration_policy")         { migration_policy_str = value; }
-
+        else if (command == "can_offload_global_weight") { can_offload_global_weight = std::stoi(value) != 0; }
 
         // ===== System parameters =====
         else if (command == "system_latency_us")        { system_latency_us = std::stod(value); }
@@ -612,10 +613,20 @@ int main(int argc, char *argv[]) {
     //hookable analyze
     init_hook_nodes();
     printf("Hook Nodes initialized\n\n");
-    for(Tensor* t : tensor_list){
-        t->init_tag();
-    }   
-    printf("Tensor Tags initialized\n\n");
+    int hookable_tensor_count = 0;
+    long offloadable_size = 0;
+    for(size_t i = 0; i < interval_list.size(); i++){
+
+        Hidding_Interval* t = interval_list[i];
+        t->the_tensor->init_tag();
+        if(t->the_tensor->tag != "unknown"){
+            hookable_tensor_count++;
+            offloadable_size += t->the_tensor->size_in_byte;
+        }
+    }
+
+    std::cout<<"[DEBUG] hookable_tensor_count="<<   hookable_tensor_count<<" offloadable_size="
+             << offloadable_size / (1024 * 1024) << " MB"<<std::endl    ;
     get_hookNode_interval_time();
     // {
     //     RedirStdOut r("layers_hook.config"); // 将输出重定向到文件
@@ -637,8 +648,8 @@ int main(int argc, char *argv[]) {
             t->print_layer_intervals();                 // 会打印头、出生死亡、HID、Tag
 
             /* 不同向量间用一行分隔符，方便 grep / awk 解析 */
-            std::cout << "----------  tensor_id=" << t->tensor_id
-                    << "  END  ----------" << std::endl;
+            // std::cout << "----------  tensor_id=" << t->tensor_id
+            //         << "  END  ----------" << std::endl;
             ++exported;
         }
         std::cerr << "[DEBUG] tensor_list.total=" << tensor_list.size()
