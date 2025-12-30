@@ -714,6 +714,13 @@ int main(int argc, char *argv[]) {
     //     }
     // }
 
+    
+    {
+        RedirStdOut r("prefetch.config");
+        scheduling_prefetch();
+        print_prefetch_table();
+    }
+
 
     // Cleanup
     for (int i = 0; i < forward_layers.size(); i++)
