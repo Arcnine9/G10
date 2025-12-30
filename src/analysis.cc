@@ -41,6 +41,7 @@ int prefetch_optimize = 1;
 std::vector<Tensor*> tensor_list;
 std::vector<CUDAKernel> kernel_list;
 std::vector<double> kernel_time_table;
+std::vector<double> hookNode_time_table;
 std::vector<Hidding_Interval*> interval_list;
 std::vector<EvictionGuide_Entry> EvictionGuide_Table;
 std::vector<long> GPU_resident_memory_estimation;
@@ -48,16 +49,82 @@ std::vector<long> CPU_resident_memory_estimation;
 std::vector<DataMovementHint> movement_hints;
 std::vector<Offload_Hint_FlashNeuron> offload_hints_fn;
 std::vector<Hidding_Interval*> offloeded_local_intervals;
+std::vector<Hook_Node> hook_nodes;
 
 //flashneuron:
 std::priority_queue<fl_pending_event, std::vector<fl_pending_event>, Fl_event_less> fl_pending_event_queue;
 
+std::set<OperatorType> hookable_types = {
+        Conv2d_T, BatchNorm2d_T, ReLU_T, MaxPool2d_T, AdaptiveAvgPool2d_T, Linear_T, Dropout_T, Add_T, Concat_T, AvgPool2d_T
+    };
+
+void init_hook_nodes(){
+    int hook_counter = 1;
+    for (size_t i = 0; i < forward_layers.size(); i++) {
+        Model_Layer* layer = forward_layers[i];
+        // 判断当前层的类型是否在可被hook的类型表中
+        if (hookable_types.find(layer->operatorr->type) != hookable_types.end()) {
+            layer->be_hooked = true; // 设置为可被hook
+            layer->hook_id = hook_counter++; // 分配hook_id
+            // hook_nodes.push_back(Hook_Node(layer->hook_id, layer->layer_id)); // 创建对应的Hook_Node并添加到hook_nodes中
+        } else {
+            layer->be_hooked = false; // 不可被hook
+            layer->hook_id = hook_counter; // 前向时继承后一层的hook_id，使得卸载尽可能晚；反向时后一层hook_id预取尽可能早
+        }
+    }
+    int time_id = 1;
+    bool is_backward = false;
+    for(size_t i = 0; i < kernel_list.size(); i++){
+        CUDAKernel* kernel = &kernel_list[i];
+        Model_Layer* layer = kernel->parent_layer;
+        if(layer == nullptr){
+            std::cout<<"[Error] Kernel ID "<<i<<" has no parent layer!"<<std::endl;
+            exit(1);
+        }
+        if(layer->be_hooked){
+            if(i+1 == kernel_list.size())
+            {
+                hook_nodes.push_back(Hook_Node(time_id++, layer->hook_id, layer->layer_id,is_backward,i));
+                kernel->hooktime_id = time_id - 1;
+                break;
+            }
+            if(get_hid_by_kid(i+1)!=layer->hook_id)
+            {
+                hook_nodes.push_back(Hook_Node(time_id++, layer->hook_id, layer->layer_id,is_backward,i));
+                kernel->hooktime_id = time_id - 1;
+            }
+            else if(kernel->type_A == AscendKernelType::A_makeLoss) // parent layer is the last forward layer
+            {
+                hook_nodes.push_back(Hook_Node(time_id++, layer->hook_id, layer->layer_id,is_backward,i-1));//end of forward
+                kernel->hooktime_id = time_id - 1;
+            }
+        }
+        if(kernel->type_A == AscendKernelType::A_makeLoss)
+        {
+            is_backward = true;
+        }
+    }
+}
+
+int get_hid_by_kid(int kid){
+    Assert(kid>=0 && kid<kernel_list.size());
+    CUDAKernel* kernel = &kernel_list[kid];
+    Model_Layer* layer = kernel->parent_layer;
+    if(layer == nullptr){
+        std::cout<<"[Error] Kernel ID "<<kid<<" has no parent layer!"<<std::endl;
+        exit(1);
+    }
+    return layer->hook_id;
+}
+
+int get_tid_by_kid(int kid){
+    Assert(kid>=0 && kid<kernel_list.size());
+    CUDAKernel* kernel = &kernel_list[kid];
+    return kernel->hooktime_id;
+}
 
 void Hook_Node::print_info(){
-    std::cout << "Hook_ID: " << this->hook_id << ", Alloc_size: " << this->alloc_size << "MB allocated, "
-            << "Release_size: " << this->release_size << "MB released, "
-            << "Forward_Sum_Size: " << this->forward_sum_size << "MB, "
-            << "Backward_Sum_Size: " << this->backward_sum_size << "MB"
+    std::cout << "Hook_ID: " << this->hook_id << ", Layer_ID: " << this->layer_id
             << std::endl;
 }
 
@@ -2292,13 +2359,10 @@ void Tensor::print_intervals(){
     
 }
 
-void Tensor::print_layer_intervals() {
-    // 如果tag为unknown，直接返回，不打印任何内容
-    {
+void Tensor::init_tag(){
         int birth_k = this->live_interval[0];
         CUDAKernel* birth_ker = &kernel_list[birth_k];
         Model_Layer* layer = birth_ker ? birth_ker->parent_layer : nullptr;
-        std::string tag = "unknown";
 
         if (layer) {
             auto check = [this](Tensor* t) { return t == this; };
@@ -2311,14 +2375,38 @@ void Tensor::print_layer_intervals() {
             else if (layer->d_weight && check(layer->d_weight))                   tag = "d_weight";
             else if (layer->d_bias && check(layer->d_bias))                       tag = "d_bias";
             else if (birth_ker->workspace && check(birth_ker->workspace))         tag = "workspace";
-            // 如需更多 tag 继续 else if ...
         }
+}
 
-        // 如果tag为unknown，直接返回
-        if (tag == "unknown") {
-            return; // 跳过未知的Tensor
-        }
+void Tensor::print_layer_intervals()
+{
+    // 如果tag为unknown，直接返回，不打印任何内容
+    
+    int birth_k = this->live_interval[0];
+    CUDAKernel* birth_ker = &kernel_list[birth_k];
+    Model_Layer* layer = birth_ker ? birth_ker->parent_layer : nullptr;
+
+    if (layer) {
+        auto check = [this](Tensor* t) { return t == this; };
+        if (layer->input_activation && check(layer->input_activation))      tag = "input";
+        else if (layer->output_activation && check(layer->output_activation)) tag = "output";
+        else if (layer->weight && check(layer->weight))                       tag = "weight";
+        else if (layer->bias && check(layer->bias))                           tag = "bias";
+        else if (layer->d_input && check(layer->d_input))                     tag = "d_input";
+        else if (layer->d_output && check(layer->d_output))                   tag = "d_output";
+        else if (layer->d_weight && check(layer->d_weight))                   tag = "d_weight";
+        else if (layer->d_bias && check(layer->d_bias))                       tag = "d_bias";
+        else if (birth_ker->workspace && check(birth_ker->workspace))         tag = "workspace";
+        // 如需更多 tag 继续 else if ...
     }
+
+        
+
+    // 如果tag为unknown，直接返回
+    if (tag == "unknown") {
+        return; // 跳过未知的Tensor
+    }
+
 
     // 如果tag不是unknown，继续打印信息
     std::cout << "=== Tensor Layer Intervals ===" << std::endl;
@@ -2450,6 +2538,51 @@ void get_interval_time(){
     // }
 }
 
+void get_hooknodes_interval_time(){
+    //TODO:: For new profiling method, we cant get kernel level time, layer or hookNode level time is needed to implement.
+    if(1){//layer should be kernel_level_profiling boolean
+        int kernel_num = kernel_list.size();
+        int hook_num = hook_nodes.size();
+        hookNode_time_table.push_back(0);
+        for (int i = 0; i < hook_num; i++)
+        {
+                //TODO: Maybe we need a time for First HookNode start? not 0?
+            //if already get_interval_time()
+            hookNode_time_table.push_back(kernel_time_table[hook_nodes[i].kernel_id]);
+        }
+        std::vector<double> hookNode_time_table_extended;
+        
+        hookNode_time_table_extended.resize(hook_num);
+        for (int j = 0; j < hook_num; j++)
+        {
+            hookNode_time_table_extended[j] = hookNode_time_table[j];
+        }
+        double last_time = hookNode_time_table[hook_num];
+        hookNode_time_table_extended.push_back(last_time);
+        for (int j = 0; j < hookNode_time_table.size(); j++)
+        {
+            hookNode_time_table_extended.push_back(last_time + hookNode_time_table[j+1]);
+        }
+
+
+        for (int i = 0; i < interval_list.size(); i++)
+        {
+            int end = get_tid_by_kid(interval_list[i]->kernelLevel_interval[1]);
+            int start = get_tid_by_kid(interval_list[i]->kernelLevel_interval[0]);
+            if (!interval_list[i]->is_looped)
+            {
+                Assert(interval_list[i]->kernelLevel_interval[1] > interval_list[i]->kernelLevel_interval[0]);
+                interval_list[i]->time_estimated = hookNode_time_table[end] - hookNode_time_table[start];
+            }
+            else
+            {
+                Assert(interval_list[i]->kernelLevel_interval[1] < interval_list[i]->kernelLevel_interval[0]); 
+                end += hook_num;
+                interval_list[i]->time_estimated = hookNode_time_table_extended[end] - hookNode_time_table_extended[start];
+            }
+        }
+    }
+}
 
 void give_eviction_guide(){
     int kernel_num = kernel_list.size();

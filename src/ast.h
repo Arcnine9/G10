@@ -342,12 +342,14 @@ class Tensor
         void print_liveness();
         void print_intervals();
         void print_layer_intervals();
+        void init_tag();
         int tensor_id;
         long long size_in_byte;
         long long raw_size_byte; 
         long long address_offset;
         bool is_global_weight;
         bool is_choosed_to_evict = false;
+        std::string tag = "unknown";// be modified at print_intervals
         int live_interval[2]; //live_interval[0] = birth; live_interval[1] = death; if death=-1, it means that this tensor is always dead
         std::vector<Hidding_Interval*> hidding_intervals;
 

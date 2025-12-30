@@ -81,14 +81,18 @@ const std::string print_eviction_array [4] = {
 
 class Hook_Node{
     public:
-        int hook_id;
-        std::vector<Tensor*> to_offload_tensors;
-        std::vector<Tensor*> to_prefetch_tensors;
-        long long alloc_size = 0;
-        long long release_size = 0;
-        long long forward_sum_size = 0;
-        long long backward_sum_size = 0;
-        Hook_Node(int id) : hook_id(id) {}
+        int time_id;
+        int hook_id;    //hook_id and layer_id are 1-based
+        int layer_id;
+        bool is_backward;
+        int kernel_id;
+        // std::vector<Tensor*> to_offload_tensors;
+        // std::vector<Tensor*> to_prefetch_tensors;
+        // long long alloc_size = 0;
+        // long long release_size = 0;
+        // long long forward_sum_size = 0;
+        // long long backward_sum_size = 0;
+        Hook_Node(int tid, int hid, int lid, bool is_backward, int kid) : time_id(tid), hook_id(hid), layer_id(lid), is_backward(is_backward), kernel_id(kid) {}
         void print_info();
 };
 
@@ -108,6 +112,7 @@ class CUDAKernel {
          * @brief number of cycles for the kernel to execute assume all the tensors 
          * are presented in the GPU memory and ready for computation.
          */
+        int hooktime_id = -1; //-1 means no hook
         long execution_cycles = -1;
         long pf_execution_cycles = -1;
         long input_pf_execution_cycles = -1;
@@ -264,6 +269,9 @@ void tensor_second_pass_interval_formation();
 
 void get_interval_time();
 
+//hook_nodes interval time
+void get_hooknodes_interval_time();
+
 void give_eviction_guide();
 
 void print_eviction_guide_table();
@@ -282,7 +290,12 @@ void print_GPU_mem_estimation();
 
 void print_GPU_mem_really_in_use();
 
+//init hook_nodes
+void init_hook_nodes();
 
+//HookNode index
+int get_hid_by_kid(int kid);
+int get_tid_by_kid(int kid);
 
 
 
