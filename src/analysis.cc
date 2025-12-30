@@ -126,8 +126,23 @@ int get_hid_by_kid(int kid){
 }
 
 int get_tid_by_kid(int kid){
-    Assert(kid>=0 && kid<kernel_list.size());
+    if(kid<0 || kid>kernel_list.size()){
+        std::cout<<"[Error] Kernel ID "<<kid<<" is out of range!"<<std::endl;
+    }
+    Assert(kid>=0 && kid<=kernel_list.size());
+    if(kid == kernel_list.size()){
+        return hook_nodes.size(); //return after all hooks
+    }
     CUDAKernel* kernel = &kernel_list[kid];
+    if(kernel->hooktime_id == -1){
+        for(int i = kid+1; i < kernel_list.size(); i++){
+            CUDAKernel* next_kernel = &kernel_list[i];
+            if(next_kernel->hooktime_id != -1){
+                return next_kernel->hooktime_id;
+            }
+        }
+        //means no hook layer, so we need to find proper hook layer
+    }
     return kernel->hooktime_id;
 }
 
@@ -2142,6 +2157,8 @@ void tensor_first_pass_liveness_analysis(){
     for (int i = 0; i < tensor_num; i++)
     {
         Tensor* current_tensor =  tensor_list[i];
+        current_tensor->live_interval[0] = -1; // birth and death
+        current_tensor->live_interval[1] = -1;
         if (!current_tensor->is_global_weight) // This tensor is a local one
         {
             // First we need to find its death time:
@@ -2159,16 +2176,21 @@ void tensor_first_pass_liveness_analysis(){
             {
                 current_tensor->live_interval[1] = -1;
             }
-            
+            find = false;
             //Second we need to find its birth time
             for (int j = 0; j < kernel_num; j++)
             {
                 if (kernel_list[j].inputs.find(current_tensor)!=kernel_list[j].inputs.end() || kernel_list[j].outputs.find(current_tensor)!=kernel_list[j].outputs.end())
                 {
+                    find = true;
                     current_tensor->live_interval[0] = j;
                     break;
                 }
             }   
+            if(!find)
+            {
+                current_tensor->live_interval[0] = -1;
+            }
         }
     }
 }
@@ -3438,6 +3460,7 @@ void scheduling_prefetch(){
 
     
     long total_mem_size = memory_offset_intermediate + memory_offset_weights + tensor_list[0]->size_in_byte;//global tensor size
+    std::cout<<"Total global tensor size is: "<< total_mem_size << " bytes."<<std::endl;
     int kernel_num = kernel_list.size();
     int hook_num = hook_nodes.size();
 
@@ -3495,7 +3518,7 @@ void scheduling_prefetch(){
         
     }
     target_mem_line = loosen_parameter * target_mem_line;    
-
+    std::cout<<"Target GPU memory line is: "<< target_mem_line << " bytes."<< "ready to alloc and dealloc"<<std::endl;
     //Except for A0, pre-deallocation all other tensors  #First pass - to figure out the memory pressure region
     for (int i = 1; i < tensor_list.size(); i++)
     {
@@ -3505,11 +3528,13 @@ void scheduling_prefetch(){
         }
         
         Tensor* curr_tensor = tensor_list[i];
-        if (!curr_tensor->is_global_weight)
+        if (!curr_tensor->is_global_weight && curr_tensor->live_interval[0]>=0)
         {
             //First do pre-alloc
-            int issue_index;
+            int issue_index = 0;
+            Assert(curr_tensor->live_interval[0]>=0 && curr_tensor->live_interval[0]<=kernel_num);
             int birth_date_index = get_tid_by_kid(curr_tensor->live_interval[0]);
+            // std::cout<<"Scheduling pre-allocation for tensor id: "<< curr_tensor->tensor_id << ", birth index is: "<< birth_date_index <<std::endl;
             double estimated_pre_alloc_time = curr_tensor->size_in_byte * GPU_malloc_uspB;
             double pre_alloc_start_time_precise = hookNode_time_table[birth_date_index] - estimated_pre_alloc_time;
             if (pre_alloc_start_time_precise < 0)
@@ -3537,7 +3562,7 @@ void scheduling_prefetch(){
                         break;
                     }
                 }
-                
+                // std::cout<<"Pre-allocation issue index is: "<< issue_index <<std::endl;
                 //minus mem
                 for (int j = 0; j < issue_index; j++)
                 {
@@ -3553,7 +3578,9 @@ void scheduling_prefetch(){
             {
                 death_index = curr_tensor->live_interval[0] + 1;
             }
+            Assert(death_index>=0 && death_index <= kernel_num);
             death_index = get_tid_by_kid(death_index);
+            // std::cout<<"Scheduling pre-deallocation for tensor id: "<< curr_tensor->tensor_id << ", death index is: "<< death_index <<std::endl;
             //DataMovementHint pre_dallo(PageLocation::NOT_KNOWN, PageLocation::NOT_PRESENT, death_index, curr_tensor);
             //movement_hints.push_back(pre_dallo);
 
@@ -3578,7 +3605,7 @@ void scheduling_prefetch(){
                     finish_index = hook_num;
                 }
                 
-
+                // std::cout<<"Pre-deallocation finish index is: "<< finish_index <<std::endl;
                 //minus mem
                 for (int j = finish_index; j < hook_num; j++)
                 {
@@ -3589,13 +3616,14 @@ void scheduling_prefetch(){
 
     
     }
-
+    std::cout << "First pass done for finding memory pressure region." << std::endl;
     bool is_under_pressure = false;
     int pressure_region[2]; 
     pressure_region[0] = -1;
     pressure_region[1] = -1;
     if (!check_GPU_OK(target_mem_line))    //If already OK, end this loop
     {
+        std::cout << "GPU memory is under pressure." << std::endl;
         is_under_pressure = true;
     }
     if (is_under_pressure)
@@ -3632,7 +3660,7 @@ void scheduling_prefetch(){
     {
         GPU_resident_memory_estimation[i] = total_mem_size;
     }
-    
+    std::cout<<"Before pre-deallocation"<<std::endl;
 
 
     //Except for A0, pre-deallocation all other tensors - Second pass, schedule the smart migration instructions
@@ -3644,13 +3672,15 @@ void scheduling_prefetch(){
         }
         
         Tensor* curr_tensor = tensor_list[i];
-        if (!curr_tensor->is_global_weight)
+        if (!curr_tensor->is_global_weight && curr_tensor->live_interval[0]>=0)
         {
             //First do pre-alloc
             //TODO: EDITED WE DONT PRE_ALLOC IN HOOK SITUATION, we only need tensor ptr we need to offload I think cuz hook is not good
             //TODO: NEED TO CHECK IF THIS AFFECTS THE RESULTS
             int issue_index;
+            Assert(curr_tensor->live_interval[0]>=0 && curr_tensor->live_interval[0]<=kernel_num);
             int birth_date_index = get_tid_by_kid(curr_tensor->live_interval[0]);
+            // std::cout<<"Scheduling pre-allocation for tensor id: "<< curr_tensor->tensor_id << ", birth index is: "<< birth_date_index <<std::endl;
             double estimated_pre_alloc_time;
             if (is_under_pressure && birth_date_index >= pressure_region[0] && birth_date_index <= pressure_region[1])
             {
@@ -3705,6 +3735,7 @@ void scheduling_prefetch(){
             {
                 death_index = curr_tensor->live_interval[0] + 1;
             }
+            Assert(death_index>=0 && death_index <= kernel_num);
             death_index = get_tid_by_kid(death_index);
             
             // if (migration_policy_str!="G10GDSSSD" && migration_policy_str!="G10GDSFULL"){
@@ -4141,7 +4172,7 @@ void scheduling_prefetch(){
                     DataMovementHint pre_alloc(PageLocation::NOT_KNOWN, PageLocation::IN_GPU, get_tid_by_kid(curr_interval->the_tensor->live_interval[0]), curr_interval->the_tensor);
                     movement_hints.push_back(pre_alloc);
                     //First schedule the pre-eviction
-                    DataMovementHint pre_evict(PageLocation::NOT_KNOWN, PageLocation::IN_CPU, get_tid_by_kid(curr_interval->kernelLevel_interval[0]), curr_interval->the_tensor);
+                    DataMovementHint pre_evict(PageLocation::IN_GPU, PageLocation::IN_CPU, get_tid_by_kid(curr_interval->kernelLevel_interval[0]), curr_interval->the_tensor);
                     movement_hints.push_back(pre_evict);
                     curr_interval->the_tensor->is_choosed_to_evict = true;
                     curr_interval->is_really_offloaded = true;
@@ -4230,6 +4261,7 @@ void scheduling_prefetch(){
     std::cout<<"Cold_iter: "<<cold_period_iter<<", Interval_list_size: "<<interval_list.size()<<std::endl;
 
     std::cout << "After First-time Offloading" << std::endl;
+    std::cout << "Estimated GPU Memory Usage along the Hooks:" << std::endl;
     print_GPU_mem_estimation();
     //TODO: Add TOLERANT logic in hook structure
     // if (eviction_policy_str=="TOLERANT")
@@ -4447,7 +4479,7 @@ void scheduling_prefetch(){
     for (int i = 0; i < offloeded_local_intervals.size(); i++)
     {
         Hidding_Interval* current_interv = offloeded_local_intervals[i];
-        std::cout<<current_interv->original_prefetch_index<<std::endl;
+        std::cout<<"original_index: "<<current_interv->original_prefetch_index<<std::endl;
 
         int iindx = current_interv->original_prefetch_index;
         while (iindx > current_interv->evict_finish_index + 1)

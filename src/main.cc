@@ -441,6 +441,8 @@ int main(int argc, char *argv[]) {
         else if (command == "is_UVM")                   { is_UVM = std::stoi(value) != 0; }
         else if (command == "use_prefetch")             { use_prefetch = std::stoi(value) != 0; }
         else if (command == "eviction_policy")          { eviction_policy_str = value; }
+        else if (command == "migration_policy")         { migration_policy_str = value; }
+
 
         // ===== System parameters =====
         else if (command == "system_latency_us")        { system_latency_us = std::stod(value); }
@@ -488,51 +490,45 @@ int main(int argc, char *argv[]) {
     SetupOutputFolder();
 
     // Model parsing and pre-pass
-    if (is_transformer == 1) {
-        transformer_parse(nn_model_input_file.c_str());
-        transformer_op_datalow_pass(borden);
-    } else {
-        if (isatty(fileno(stdin))) {  // 如果当前输入不是管道输入
-            if (nn_model_input_file.empty()) {
-                eprintf("No input NN model in either stdin or config file\n", "");
+    if (isatty(fileno(stdin))) {  // 如果当前输入不是管道输入
+        if (nn_model_input_file.empty()) {
+            eprintf("No input NN model in either stdin or config file\n", "");
+            Assert(false);
+        } else {
+            std::ifstream nn_model(nn_model_input_file.c_str());
+            if (!nn_model.good()) {
+                eprintf("Invalid input NN model specified in config file <%s>\n",
+                        nn_model_input_file.c_str());
                 Assert(false);
-            } else {
-                std::ifstream nn_model(nn_model_input_file.c_str());
-                if (!nn_model.good()) {
-                    eprintf("Invalid input NN model specified in config file <%s>\n",
-                            nn_model_input_file.c_str());
-                    Assert(false);
-                }
-                freopen(nn_model_input_file.c_str(), "r", stdin);  // ⬅ 关键点：重定向
             }
+            freopen(nn_model_input_file.c_str(), "r", stdin);  // ⬅ 关键点：重定向
         }
-        std::printf("ready to init Scanner\n");
-        InitScanner();
-        InitParser();
-        printf("ready to yyparse\n");
-        yyparse();
+    }
+    std::printf("ready to init Scanner\n");
+    InitScanner();
+    InitParser();
+    printf("ready to yyparse\n");
+    yyparse();
 
-        std::ofstream log_file("Inception_layer_list.txt");
-        std::streambuf* cout_buf = std::cout.rdbuf(); // 保存原缓冲区
-        std::cout.rdbuf(log_file.rdbuf());            // 重定向到文件
+    std::ofstream log_file("Inception_layer_list.txt");
+    std::streambuf* cout_buf = std::cout.rdbuf(); // 保存原缓冲区
+    std::cout.rdbuf(log_file.rdbuf());            // 重定向到文件
 
-        // 打印层信息（所有 print_name 输出会进入 layer_list.txt）
-        for (int i = 0; i < forward_layers.size(); i++) {
-            forward_layers[i]->print_name();
-        }
-
-        // 恢复 std::cout
-        std::cout.rdbuf(cout_buf);
-        log_file.close();
-
-        std::printf("ready to layer analyse\n");
-        layer_pre_pass_datasize();
-        std::printf("layer pre done\n");
-        layer_first_pass_dataflow();
-        layer_second_pass_scheduling_kernels_ascend();
+    // 打印层信息（所有 print_name 输出会进入 layer_list.txt）
+    for (int i = 0; i < forward_layers.size(); i++) {
+        forward_layers[i]->print_name();
     }
 
-    printf("\n");
+    // 恢复 std::cout
+    std::cout.rdbuf(cout_buf);
+    log_file.close();
+
+    std::printf("ready to layer analyse\n");
+    layer_pre_pass_datasize();
+    std::printf("layer pre done\n");
+    layer_first_pass_dataflow();
+    layer_second_pass_scheduling_kernels_ascend();
+    
 
     // Output tensor info (for Interval Time calculation)
     {
