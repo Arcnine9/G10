@@ -570,7 +570,7 @@ int main(int argc, char *argv[]) {
     tensor_first_pass_liveness_analysis();
     tensor_second_pass_interval_formation();
     get_interval_time();
-    get_hooknodes_interval_time();
+    
 
     // Export Interval Time to txt file
     // ==========  新增：完整的张量生命周期信息导出  ==========
@@ -615,10 +615,12 @@ int main(int argc, char *argv[]) {
 
     //hookable analyze
     init_hook_nodes();
+    printf("Hook Nodes initialized\n\n");
     for(Tensor* t : tensor_list){
         t->init_tag();
-    }
-
+    }   
+    printf("Tensor Tags initialized\n\n");
+    get_hookNode_interval_time();
     // {
     //     RedirStdOut r("layers_hook.config"); // 将输出重定向到文件
     //     for (size_t i = 0; i < forward_layers.size(); i++) {
@@ -651,7 +653,10 @@ int main(int argc, char *argv[]) {
 
 
     //TODO: based on hookable layers, do tensor mem analysis. then eventCreato
-    
+    {
+        RedirStdOut r("hookNode_time.config"); // 将输出重定向到文件
+        print_hookNode_time_table();
+    }
 
     // // 遍历所有Tensor，更新Hook_Node信息
     // long long total_forward_size = 0; // 用于记录正向传播的累积大小

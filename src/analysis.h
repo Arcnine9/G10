@@ -270,7 +270,8 @@ void tensor_second_pass_interval_formation();
 void get_interval_time();
 
 //hook_nodes interval time
-void get_hooknodes_interval_time();
+void get_hookNode_interval_time();
+void print_hookNode_time_table();
 
 void give_eviction_guide();
 

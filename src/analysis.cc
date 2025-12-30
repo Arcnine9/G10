@@ -73,6 +73,8 @@ void init_hook_nodes(){
         }
     }
     int time_id = 1;
+    int forward_count = 0;
+    int backward_count = 0;
     bool is_backward = false;
     for(size_t i = 0; i < kernel_list.size(); i++){
         CUDAKernel* kernel = &kernel_list[i];
@@ -84,17 +86,22 @@ void init_hook_nodes(){
         if(layer->be_hooked){
             if(i+1 == kernel_list.size())
             {
+                backward_count++;
                 hook_nodes.push_back(Hook_Node(time_id++, layer->hook_id, layer->layer_id,is_backward,i));
                 kernel->hooktime_id = time_id - 1;
                 break;
             }
             if(get_hid_by_kid(i+1)!=layer->hook_id)
             {
+                if(!is_backward) forward_count++;
+                else backward_count++;
+
                 hook_nodes.push_back(Hook_Node(time_id++, layer->hook_id, layer->layer_id,is_backward,i));
                 kernel->hooktime_id = time_id - 1;
             }
             else if(kernel->type_A == AscendKernelType::A_makeLoss) // parent layer is the last forward layer
             {
+                forward_count++;
                 hook_nodes.push_back(Hook_Node(time_id++, layer->hook_id, layer->layer_id,is_backward,i-1));//end of forward
                 kernel->hooktime_id = time_id - 1;
             }
@@ -104,6 +111,7 @@ void init_hook_nodes(){
             is_backward = true;
         }
     }
+    printf("Total Hook Nodes: %lu (Forward: %d, Backward: %d)\n", hook_nodes.size(), forward_count, backward_count);
 }
 
 int get_hid_by_kid(int kid){
@@ -2360,6 +2368,9 @@ void Tensor::print_intervals(){
 }
 
 void Tensor::init_tag(){
+        if (is_global_weight) return;
+        if (hidding_intervals.empty()) return;
+
         int birth_k = this->live_interval[0];
         CUDAKernel* birth_ker = &kernel_list[birth_k];
         Model_Layer* layer = birth_ker ? birth_ker->parent_layer : nullptr;
@@ -2538,9 +2549,9 @@ void get_interval_time(){
     // }
 }
 
-void get_hooknodes_interval_time(){
+void get_hookNode_interval_time(){
     //TODO:: For new profiling method, we cant get kernel level time, layer or hookNode level time is needed to implement.
-    if(1){//layer should be kernel_level_profiling boolean
+    if(true){//layer should be kernel_level_profiling boolean
         int kernel_num = kernel_list.size();
         int hook_num = hook_nodes.size();
         hookNode_time_table.push_back(0);
@@ -2548,6 +2559,7 @@ void get_hooknodes_interval_time(){
         {
                 //TODO: Maybe we need a time for First HookNode start? not 0?
             //if already get_interval_time()
+            Assert(hook_nodes[i].kernel_id < kernel_time_table.size());
             hookNode_time_table.push_back(kernel_time_table[hook_nodes[i].kernel_id]);
         }
         std::vector<double> hookNode_time_table_extended;
@@ -2582,6 +2594,15 @@ void get_hooknodes_interval_time(){
             }
         }
     }
+}
+
+void print_hookNode_time_table(){
+    std::cout<<"=== HookNodes Time Table ==="<<std::endl;
+    for (int i = 0; i < hookNode_time_table.size(); i++)
+    {
+        std::cout<<"HookNode time id "<<i<<": "<<hookNode_time_table[i]<<" us."<<std::endl;
+    }
+    std::cout<<"============================"<<std::endl;
 }
 
 void give_eviction_guide(){
