@@ -53,6 +53,7 @@ double PCIe_latency_us = -1;
 int PCIe_batch_size_in_page = -1;
 // Other parameters
 bool use_prefetch = false;
+bool can_get_unknown_tensor = false;
 bool can_offload_global_weight = false;
 string migration_policy_str;
 string eviction_policy_str;

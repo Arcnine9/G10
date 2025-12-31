@@ -56,6 +56,7 @@ extern double PCIe_latency_us;  // NOT USED FOR NOW
 extern int PCIe_batch_size_in_page;
 // Other sim param
 extern bool use_prefetch;
+extern bool can_get_unknown_tensor;
 extern bool can_offload_global_weight;
 extern std::string migration_policy_str;
 extern std::string eviction_policy_str;
@@ -444,6 +445,7 @@ int main(int argc, char *argv[]) {
         else if (command == "eviction_policy")          { eviction_policy_str = value; }
         else if (command == "migration_policy")         { migration_policy_str = value; }
         else if (command == "can_offload_global_weight") { can_offload_global_weight = std::stoi(value) != 0; }
+        else if (command == "can_get_unknown_tensor")   { can_get_unknown_tensor = std::stoi(value) != 0; }
 
         // ===== System parameters =====
         else if (command == "system_latency_us")        { system_latency_us = std::stod(value); }

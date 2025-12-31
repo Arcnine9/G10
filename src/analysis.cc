@@ -13,6 +13,7 @@
 using Simulator::DataMovementHint;
 using Simulator::PageLocation;
 
+extern bool can_get_unknown_tensor;
 extern bool can_offload_global_weight;
 extern std::string migration_policy_str;
 extern std::string eviction_policy_str;
@@ -3925,21 +3926,25 @@ void scheduling_prefetch(){
                 curr_interval->is_offloaded = true;
                 continue;
             }
-        }
             
+        }
+        if(can_get_unknown_tensor==false)
+        {
+            if(curr_interval->the_tensor->tag == "unknown") //BN V1 and V2 tensor we cannot get
+            {
+                // std::cout<<" Tensor id: " << curr_interval->the_tensor->tensor_id << " is unknown type, cannot offload it." <<std::endl;
+                curr_interval->is_offloaded = true;
+                tag_failed_count++;
+                continue;
+            }
+        }
         if (check_GPU_OK_interval(target_mem_line, curr_interval->kernelLevel_interval[0], curr_interval->kernelLevel_interval[1]))
         {
             curr_interval->is_offloaded = true;
             continue;
         }
 
-        // if(curr_interval->the_tensor->tag == "unknown") //BN V1 and V2 tensor we cannot get
-        // {
-        //     std::cout<<" Tensor id: " << curr_interval->the_tensor->tensor_id << " is unknown type, cannot offload it." <<std::endl;
-        //     curr_interval->is_offloaded = true;
-        //     tag_failed_count++;
-        //     continue;
-        // }
+
 
         int cha;
         if (!curr_interval->is_looped)
