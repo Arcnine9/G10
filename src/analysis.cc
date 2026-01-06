@@ -3308,7 +3308,7 @@ void print_BW_estimations(){
 
 
 int scheduling_offload_flashneuron(){
-    // First Calculate the total space for un-offloading tensors
+    // First Calculate the total space for un-offloading tensor
     long GPU_line = (long)(GPU_memory_size_GB * 1024 * 1024 *1024);
     long global_tensor_size = memory_offset_weights;
 
