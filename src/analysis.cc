@@ -61,6 +61,7 @@ std::set<OperatorType> hookable_types = {
     };
 
 void init_hook_nodes(){
+    /*初始化hook_node序号按时间顺序完成一次完整的前向+反向，首先对层进行hookable标识，然后走kernel_trace绑定hookID*/
     int hook_counter = 1;
     for (size_t i = 0; i < forward_layers.size(); i++) {
         Model_Layer* layer = forward_layers[i];
@@ -83,7 +84,7 @@ void init_hook_nodes(){
         Model_Layer* layer = kernel->parent_layer;
         if(layer == nullptr){
             std::cout<<"[Error] Kernel ID "<<i<<" has no parent layer!"<<std::endl;
-            exit(1);
+            Assert(layer!=nullptr);
         }
         if(layer->be_hooked){
             if(i+1 == kernel_list.size())
@@ -4190,7 +4191,7 @@ void scheduling_prefetch(){
                 Assert(pcie_prefetch_index >=0);
 
 
-                if (pcie_prefetch_index > pcie_eviction_clear_index)
+                if (pcie_prefetch_index > pcie_eviction_clear_index + 1)
                 {
                     //TODO: add pre_alloc to get tensor ptr and store it.
                     DataMovementHint pre_alloc(PageLocation::NOT_KNOWN, PageLocation::IN_GPU, get_tid_by_kid(curr_interval->the_tensor->live_interval[0]), curr_interval->the_tensor);
@@ -4198,11 +4199,16 @@ void scheduling_prefetch(){
                     //First schedule the pre-eviction
                     DataMovementHint pre_evict(PageLocation::IN_GPU, PageLocation::IN_CPU, get_tid_by_kid(curr_interval->kernelLevel_interval[0]), curr_interval->the_tensor);
                     movement_hints.push_back(pre_evict);
+                    DataMovementHint pre_evictEnd(PageLocation::IN_CPU, PageLocation::IN_CPU, pcie_eviction_clear_index, curr_interval->the_tensor);
+                    movement_hints.push_back(pre_evictEnd);
                     curr_interval->the_tensor->is_choosed_to_evict = true;
                     curr_interval->is_really_offloaded = true;
 
-                    // DataMovementHint pre_fetch(PageLocation::NOT_KNOWN, PageLocation::IN_GPU, pcie_prefetch_index, curr_interval->the_tensor);
+                    // DataMovementHint pre_fetch(PageLocation::IN_CPU, PageLocation::IN_GPU, pcie_prefetch_index, curr_interval->the_tensor);
                     // movement_hints.push_back(pre_fetch);
+                    DataMovementHint pre_fetchEnd(PageLocation::IN_GPU, PageLocation::IN_GPU, get_tid_by_kid(curr_interval->kernelLevel_interval[1]) - 1, curr_interval->the_tensor);
+                    movement_hints.push_back(pre_fetchEnd);
+
                     curr_interval->original_prefetch_index = pcie_prefetch_index;
                     curr_interval->evict_finish_index = pcie_eviction_clear_index;
                     offloeded_local_intervals.push_back(curr_interval);
@@ -4257,11 +4263,16 @@ void scheduling_prefetch(){
                     //First schedule the pre-eviction
                     DataMovementHint pre_evict(PageLocation::IN_GPU, PageLocation::IN_CPU, get_tid_by_kid(curr_interval->kernelLevel_interval[0]), curr_interval->the_tensor);
                     movement_hints.push_back(pre_evict);
+                    //TODO:: maybe used before alloc??
+                    DataMovementHint pre_evictEnd(PageLocation::IN_CPU, PageLocation::IN_CPU, eviction_clear_index % hook_num, curr_interval->the_tensor);
+                    movement_hints.push_back(pre_evictEnd);
                     curr_interval->the_tensor->is_choosed_to_evict = true;
                     curr_interval->is_really_offloaded = true;
 
-                    DataMovementHint pre_fetch(PageLocation::IN_CPU, PageLocation::IN_GPU, prefetch_start_index % hook_num, curr_interval->the_tensor);
-                    movement_hints.push_back(pre_fetch);
+                    // DataMovementHint pre_fetch(PageLocation::IN_CPU, PageLocation::IN_GPU, prefetch_start_index % hook_num, curr_interval->the_tensor);
+                    // movement_hints.push_back(pre_fetch);
+                    DataMovementHint pre_fetchEnd(PageLocation::IN_GPU, PageLocation::IN_GPU, get_tid_by_kid(curr_interval->kernelLevel_interval[1]) - 1, curr_interval->the_tensor);
+                    movement_hints.push_back(pre_fetchEnd);
                 }
                 
 
@@ -4491,7 +4502,7 @@ void scheduling_prefetch(){
 
 
     std::cout<<"BW Estimation:"<<std::endl;
-    print_BW_estimations();
+    //print_BW_estimations();
 
 
     std::cout<<"Now scheduling local prefetch!"<<std::endl;
@@ -4518,7 +4529,7 @@ void scheduling_prefetch(){
             }
         }
         
-        DataMovementHint pre_fetch(PageLocation::IN_CPU, PageLocation::IN_GPU, iindx, current_interv->the_tensor);
+        DataMovementHint pre_fetch(PageLocation::IN_CPU, PageLocation::IN_GPU, iindx - 1, current_interv->the_tensor);
         movement_hints.push_back(pre_fetch);
 
         //plus mem
@@ -4592,7 +4603,7 @@ void print_prefetch_table(){
     {
         DataMovementHint curr = movement_hints[i];
         std::cout << "Issued Time: " << curr.issued_time << " ";
-        std::cout << "Tensor: " << curr.tensor->tensor_id << " G:" << (curr.tensor->is_global_weight ? "o" : "x") << " ";
+        std::cout << "Tensor: " << curr.tensor->tensor_id << " ";
         std::cout << "From: " << Simulator::print_pagelocation_array[curr.from] << ", To: " << Simulator::print_pagelocation_array[curr.to] <<" ";
         std::cout << "tag: " << curr.tensor->tag << std::endl;
     }

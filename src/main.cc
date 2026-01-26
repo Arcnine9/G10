@@ -722,11 +722,13 @@ int main(int argc, char *argv[]) {
     //         }
     //     }
     // }
-
+    {
+        RedirStdOut r("mem_estimate.config");
+        scheduling_prefetch();
+    }
     
     {
         RedirStdOut r("prefetch.config");
-        scheduling_prefetch();
         print_prefetch_table();
     }
 

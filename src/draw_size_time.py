@@ -26,9 +26,12 @@ plt.xscale('log')
 plt.yscale('log')
 
 # 设置标题和坐标轴标签
-plt.title('Distribution of Inactive Periods of Tensors for ResNet152')
-plt.xlabel('Inactive Time (µs)')
-plt.ylabel('Size (byte)')
+plt.title('Distribution of Inactive Periods of Tensors for InceptionV3', fontsize=26, fontweight='bold')
+plt.xlabel('Inactive Time (µs)', fontsize=24, fontweight='bold')
+plt.ylabel('Size (byte)', fontsize=24, fontweight='bold')
+
+plt.xticks(fontsize=18, fontweight='bold')
+plt.yticks(fontsize=18, fontweight='bold')
 
 # 设置网格
 plt.grid(True, which='both', linestyle='--', linewidth=0.5)
