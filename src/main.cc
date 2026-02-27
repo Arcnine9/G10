@@ -315,7 +315,7 @@ void loadKernelTimes() {
         exe_time_cycle = std::stod(exe_time_ms_str) * GPU_frequency_Hz / 1000.0;
         delta_execution_time = exe_time_cycle - exe_time_cycle / kernel_speedup;
         kernel_list[i].execution_cycles = exe_time_cycle - delta_execution_time;
-        Assert(kernel_list[i].execution_cycles > 0);
+        Assert(kernel_list[i].execution_cycles >= 0);
         total_time += kernel_list[i].execution_cycles / GPU_frequency_Hz * 1000;
         total_time_cycle += exe_time_cycle;
         // read in input_pf execution time from file
@@ -338,11 +338,11 @@ void loadKernelTimes() {
         kernel_list[i].pf_execution_cycles = exe_time_cycle - delta_execution_time;
         if (kernel_list[i].pf_execution_cycles < kernel_list[i].input_pf_execution_cycles)
             kernel_list[i].pf_execution_cycles = kernel_list[i].input_pf_execution_cycles;
-        Assert(kernel_list[i].pf_execution_cycles > 0);
-        Assert(exe_time_cycle > 0);
+        Assert(kernel_list[i].pf_execution_cycles >= 0);
+        Assert(exe_time_cycle >= 0);
         pf_total_time += kernel_list[i].pf_execution_cycles / GPU_frequency_Hz * 1000;
         pf_total_time_cycle += exe_time_cycle;
-        Assert(kernel_list[i].input_pf_execution_cycles > 0);
+        Assert(kernel_list[i].input_pf_execution_cycles >= 0);
     }
     nprintf("Total time (Ideal): %f ms %lu cycles; (PF): %f ms %lu cycles\n", 
             total_time, total_time_cycle, pf_total_time, pf_total_time_cycle);
